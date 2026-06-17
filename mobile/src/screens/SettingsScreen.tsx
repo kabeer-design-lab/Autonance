@@ -1,16 +1,25 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Linking, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius } from '../theme';
 import { useTransactions } from '../store/TransactionsContext';
+import { useSession } from '../store/SessionContext';
+import { getLinkedPhone } from '../lib/auth';
 
-// The WhatsApp number users message to log expenses.
-const WHATSAPP_NUMBER = '15551234567'; // replace with your Meta test/business number
-const WA_LINK = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent('Spent ₹250 on lunch')}`;
+// The WhatsApp number users message to log expenses (replace with your business number).
+const BUSINESS_WA = '15551234567';
+const WA_LINK = `https://wa.me/${BUSINESS_WA}?text=${encodeURIComponent('Spent ₹250 on lunch')}`;
 
 export function SettingsScreen({ navigation }: any) {
-  const { transactions } = useTransactions();
+  const { transactions, syncing } = useTransactions();
+  const { session } = useSession();
+  const [linkedPhone, setLinkedPhone] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!session) return;
+    getLinkedPhone(session).then(setLinkedPhone);
+  }, [session]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -21,24 +30,36 @@ export function SettingsScreen({ navigation }: any) {
         <View style={styles.profile}>
           <View style={styles.avatar}><Text style={styles.avatarText}>A</Text></View>
           <View>
-            <Text style={styles.profileName}>Abdul Kabeer</Text>
-            <Text style={styles.profileSub}>{transactions.length} transactions logged</Text>
+            <Text style={styles.profileName}>You</Text>
+            <Text style={styles.profileSub}>
+              {transactions.length} transaction{transactions.length === 1 ? '' : 's'}
+              {syncing ? ' · syncing…' : ''}
+            </Text>
           </View>
         </View>
 
-        {/* Connect WhatsApp — the hero action */}
-        <TouchableOpacity style={styles.waCard} activeOpacity={0.85} onPress={() => Linking.openURL(WA_LINK)}>
+        {/* WhatsApp connection card */}
+        <TouchableOpacity
+          style={styles.waCard}
+          activeOpacity={0.85}
+          onPress={() => linkedPhone ? Linking.openURL(WA_LINK) : navigation.navigate('ConnectWhatsApp')}
+        >
           <View style={styles.waIcon}>
             <Ionicons name="logo-whatsapp" size={24} color="#FFF" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.waTitle}>Log expenses on WhatsApp</Text>
-            <Text style={styles.waSub}>Just text us what you spent. We'll do the rest.</Text>
+            <Text style={styles.waTitle}>
+              {linkedPhone ? 'WhatsApp connected' : 'Log expenses on WhatsApp'}
+            </Text>
+            <Text style={styles.waSub}>
+              {linkedPhone
+                ? `Linked to ${linkedPhone} · Tap to chat`
+                : "Text us what you spent. We'll do the rest."}
+            </Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
         </TouchableOpacity>
 
-        {/* Sections */}
         <Section title="Preferences">
           <Row icon="cash-outline" label="Currency" value="₹ INR" />
           <Row icon="pricetags-outline" label="Categories" value="9 active" />
@@ -53,7 +74,10 @@ export function SettingsScreen({ navigation }: any) {
 
         <TouchableOpacity
           style={styles.signOut}
-          onPress={() => Alert.alert('Sign out', 'Auth is wired up next — nothing to sign out of yet.')}
+          onPress={() => Alert.alert(
+            'Sign out',
+            'Signing out will reset this device. Your data stays linked to your WhatsApp number.',
+          )}
         >
           <Text style={styles.signOutText}>Sign out</Text>
         </TouchableOpacity>

@@ -1,82 +1,105 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Transaction, NewTransaction } from '../types';
-import type { CategoryName } from '../theme';
+import { rowToTransaction } from '../types';
+import { fetchTransactions, insertTransactionRow, deleteTransactionRow } from '../lib/db';
+import { supabase } from '../lib/supabase';
+import { useSession } from './SessionContext';
 
-const STORAGE_KEY = '@autonance/transactions';
-
-// Seed data so the app feels alive on first open.
-function seed(): Transaction[] {
-  const today = new Date();
-  const d = (offset: number) => {
-    const dt = new Date(today);
-    dt.setDate(dt.getDate() - offset);
-    return dt.toISOString().slice(0, 10);
-  };
-  const t = (
-    id: string, amount: number, type: Transaction['type'], category: CategoryName,
-    description: string, payee: string | null, occurredAt: string,
-    source: Transaction['source'] = 'app',
-  ): Transaction => ({
-    id, amount, currency: '₹', type, category, description, payee,
-    paymentMode: null, occurredAt, source,
-  });
-
-  return [
-    t('s1', 830, 'expense', 'Food', 'Swiggy Instamart', 'Groceries for the week', d(0), 'whatsapp'),
-    t('s2', 60, 'expense', 'Transport', 'Auto rickshaw', 'To the office', d(0)),
-    t('s3', 1299, 'expense', 'Entertainment', 'Netflix', 'Monthly plan', d(1)),
-    t('s4', 420, 'expense', 'Transport', 'Ola', 'Ride to airport', d(2), 'whatsapp'),
-    t('s5', 85000, 'income', 'Business', 'Salary', 'June payout from Razorpay', d(3)),
-    t('s6', 2400, 'expense', 'Shopping', 'Myntra', 'New running shoes', d(4)),
-    t('s7', 540, 'expense', 'Food', 'Blue Tokai', 'Coffee with Priya', d(5), 'whatsapp'),
-    t('s8', 3200, 'expense', 'Bills', 'Electricity', 'BESCOM June bill', d(6)),
-    t('s9', 150, 'expense', 'Health', 'Apollo Pharmacy', 'Vitamins', d(8)),
-    t('s10', 5000, 'income', 'Other', 'Freelance', 'Logo design for a friend', d(10)),
-  ];
-}
+const CACHE_KEY = '@autonance/transactions_cache';
 
 interface TransactionsContextValue {
   transactions: Transaction[];
   loading: boolean;
+  syncing: boolean;
+  error: string | null;
   addTransaction: (input: NewTransaction) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
 const TransactionsContext = createContext<TransactionsContextValue | undefined>(undefined);
 
 export function TransactionsProvider({ children }: { children: React.ReactNode }) {
+  const { session } = useSession();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const txRef = useRef<Transaction[]>([]);
+  txRef.current = transactions;
 
-  // Load from storage (or seed) on mount.
+  const setAndCache = useCallback(async (next: Transaction[]) => {
+    setTransactions(next);
+    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(next));
+  }, []);
+
+  // Load cache instantly, then fetch fresh from Supabase.
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          setTransactions(JSON.parse(raw));
-        } else {
-          const initial = seed();
-          setTransactions(initial);
-          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
-        }
-      } catch {
-        setTransactions(seed());
-      } finally {
+      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      if (!cancelled && cached) {
+        setTransactions(JSON.parse(cached));
         setLoading(false);
       }
-    })();
-  }, []);
 
-  const persist = useCallback(async (next: Transaction[]) => {
-    setTransactions(next);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  }, []);
+      if (!session) return;
+
+      try {
+        setSyncing(true);
+        const fresh = await fetchTransactions(session);
+        if (!cancelled) await setAndCache(fresh);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) {
+          setSyncing(false);
+          setLoading(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session, setAndCache]);
+
+  // Realtime subscription — new rows from WhatsApp appear instantly.
+  useEffect(() => {
+    if (!session) return;
+    const channel = supabase
+      .channel(`tx:${session.workspaceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'transactions',
+          filter: `workspace_id=eq.${session.workspaceId}`,
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const t = rowToTransaction(payload.new);
+            // Skip if already present (we inserted it ourselves)
+            if (txRef.current.find((x) => x.id === t.id)) return;
+            setAndCache([t, ...txRef.current]);
+          } else if (payload.eventType === 'DELETE') {
+            const id = String((payload.old as any).id);
+            setAndCache(txRef.current.filter((x) => x.id !== id));
+          } else if (payload.eventType === 'UPDATE') {
+            const t = rowToTransaction(payload.new);
+            setAndCache(txRef.current.map((x) => (x.id === t.id ? t : x)));
+          }
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [session, setAndCache]);
 
   const addTransaction = useCallback(async (input: NewTransaction) => {
-    const tx: Transaction = {
-      id: `t_${Date.now()}`,
+    if (!session) throw new Error('No session');
+    // Optimistic insert
+    const tempId = `temp_${Date.now()}`;
+    const optimistic: Transaction = {
+      id: tempId,
       amount: input.amount,
       currency: '₹',
       type: input.type,
@@ -87,15 +110,49 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
       occurredAt: input.occurredAt,
       source: 'app',
     };
-    await persist([tx, ...transactions]);
-  }, [transactions, persist]);
+    await setAndCache([optimistic, ...txRef.current]);
+
+    try {
+      const saved = await insertTransactionRow(session, input);
+      // Swap optimistic row with real one
+      await setAndCache(txRef.current.map((x) => (x.id === tempId ? saved : x)));
+    } catch (e: any) {
+      // Roll back on failure
+      await setAndCache(txRef.current.filter((x) => x.id !== tempId));
+      throw e;
+    }
+  }, [session, setAndCache]);
 
   const deleteTransaction = useCallback(async (id: string) => {
-    await persist(transactions.filter((t) => t.id !== id));
-  }, [transactions, persist]);
+    if (!session) throw new Error('No session');
+    const snapshot = txRef.current;
+    await setAndCache(snapshot.filter((x) => x.id !== id));
+    try {
+      await deleteTransactionRow(session, id);
+    } catch (e: any) {
+      // Roll back on failure
+      await setAndCache(snapshot);
+      throw e;
+    }
+  }, [session, setAndCache]);
+
+  const refresh = useCallback(async () => {
+    if (!session) return;
+    setSyncing(true);
+    try {
+      const fresh = await fetchTransactions(session);
+      await setAndCache(fresh);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSyncing(false);
+    }
+  }, [session, setAndCache]);
 
   return (
-    <TransactionsContext.Provider value={{ transactions, loading, addTransaction, deleteTransaction }}>
+    <TransactionsContext.Provider
+      value={{ transactions, loading, syncing, error, addTransaction, deleteTransaction, refresh }}
+    >
       {children}
     </TransactionsContext.Provider>
   );

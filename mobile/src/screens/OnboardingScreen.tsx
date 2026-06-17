@@ -19,8 +19,8 @@ export function OnboardingScreen({ navigation }: any) {
           </Text>
 
           <View style={styles.buttons}>
-            <Button label="Get started" onPress={() => navigation.replace('Main')} />
-            <Button label="I already have an account" onPress={() => navigation.replace('Main')} variant="secondary" />
+            <Button label="Get started" onPress={() => navigation.navigate('ConnectWhatsApp')} />
+            <Button label="I already have an account" onPress={() => navigation.navigate('ConnectWhatsApp')} variant="secondary" />
           </View>
 
           <Text style={styles.legal}>By continuing you agree to our Terms & Privacy Policy.</Text>
