@@ -3,34 +3,35 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { colors, typography, spacing, radius } from '../theme';
 
-type Period = '1W' | '1M' | '3M' | '1Y';
+type Period = '1D' | '1W' | '1M' | '6M' | '1Y';
 
 interface LineChartProps {
   data: number[];
-  labels?: string[];
   width?: number;
   height?: number;
-  currency?: string;
 }
 
 function buildPath(points: { x: number; y: number }[]): string {
   if (points.length < 2) return '';
-  const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-  return d;
+  return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
 }
 
-function buildArea(points: { x: number; y: number }[], height: number): string {
+function buildArea(points: { x: number; y: number }[], h: number): string {
   if (points.length < 2) return '';
-  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-  return `${path} L ${points[points.length - 1].x} ${height} L ${points[0].x} ${height} Z`;
+  return [
+    ...points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`),
+    `L ${points[points.length - 1].x} ${h}`,
+    `L ${points[0].x} ${h}`,
+    'Z',
+  ].join(' ');
 }
 
-export function LineChart({ data, width = 300, height = 100, currency = '₹' }: LineChartProps) {
-  const [period, setPeriod] = useState<Period>('1M');
-  const periods: Period[] = ['1W', '1M', '3M', '1Y'];
+export function LineChart({ data, width = 300, height = 100 }: LineChartProps) {
+  const [period, setPeriod] = useState<Period>('1W');
+  const periods: Period[] = ['1D', '1W', '1M', '6M', '1Y'];
 
-  const padX = 4;
-  const padY = 8;
+  const padX = 2;
+  const padY = 6;
   const chartW = width - padX * 2;
   const chartH = height - padY * 2;
 
@@ -43,11 +44,25 @@ export function LineChart({ data, width = 300, height = 100, currency = '₹' }:
     y: padY + (1 - (v - min) / range) * chartH,
   }));
 
-  const linePath = buildPath(points);
-  const areaPath = buildArea(points, height);
-
   return (
     <View style={styles.container}>
+      <Svg width={width} height={height}>
+        <Defs>
+          <LinearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor={colors.primary} stopOpacity="0.12" />
+            <Stop offset="1" stopColor={colors.primary} stopOpacity="0" />
+          </LinearGradient>
+        </Defs>
+        <Path d={buildArea(points, height)} fill="url(#lineGrad)" />
+        <Path
+          d={buildPath(points)}
+          stroke={colors.primary}
+          strokeWidth={1.8}
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </Svg>
       <View style={styles.periodRow}>
         {periods.map((p) => (
           <TouchableOpacity
@@ -61,16 +76,6 @@ export function LineChart({ data, width = 300, height = 100, currency = '₹' }:
           </TouchableOpacity>
         ))}
       </View>
-      <Svg width={width} height={height}>
-        <Defs>
-          <LinearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={colors.primary} stopOpacity="0.15" />
-            <Stop offset="1" stopColor={colors.primary} stopOpacity="0" />
-          </LinearGradient>
-        </Defs>
-        <Path d={areaPath} fill="url(#grad)" />
-        <Path d={linePath} stroke={colors.primary} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      </Svg>
     </View>
   );
 }
@@ -81,23 +86,24 @@ const styles = StyleSheet.create({
   },
   periodRow: {
     flexDirection: 'row',
-    gap: spacing.xs,
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xs,
   },
   periodBtn: {
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
-    borderRadius: radius.full,
-    backgroundColor: colors.surfaceOffset,
+    borderRadius: radius.xs,
   },
   periodBtnActive: {
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.surfaceOffset,
   },
   periodLabel: {
     ...(typography.caption as object),
-    color: colors.textMuted,
     fontWeight: '500',
+    color: colors.textMuted,
   },
   periodLabelActive: {
-    color: colors.primary,
+    color: colors.textPrimary,
+    fontWeight: '700',
   },
 });

@@ -4,12 +4,11 @@ import {
   Text,
   StyleSheet,
   ViewStyle,
-  TextStyle,
   ActivityIndicator,
 } from 'react-native';
 import { colors, typography, radius, spacing } from '../theme';
 
-type Variant = 'primary' | 'secondary' | 'pill';
+type Variant = 'primary' | 'secondary' | 'pill' | 'pillGhost';
 
 interface ButtonProps {
   label: string;
@@ -36,9 +35,9 @@ export function Button({
       style={[styles.base, styles[variant], disabled && styles.disabled, style]}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'secondary' ? colors.textPrimary : colors.textInverse} />
+        <ActivityIndicator color={variant === 'secondary' || variant === 'pillGhost' ? colors.textPrimary : '#FFFFFF'} />
       ) : (
-        <Text style={[styles.label, styles[`${variant}Label` as keyof typeof styles] as TextStyle]}>
+        <Text style={[styles.label, styles[`${variant}Label` as keyof typeof styles] as object]}>
           {label}
         </Text>
       )}
@@ -58,30 +57,45 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   secondary: {
-    backgroundColor: colors.surfaceOffset,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
   },
   pill: {
     height: 36,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#000000',
     borderRadius: radius.full,
     paddingHorizontal: spacing.base,
+  },
+  pillGhost: {
+    height: 36,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.base,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   disabled: {
     opacity: 0.4,
   },
   label: {
     ...(typography.label as object),
+    letterSpacing: -0.1,
   },
   primaryLabel: {
-    color: colors.textInverse,
+    color: '#FFFFFF',
   },
   secondaryLabel: {
     color: colors.textPrimary,
   },
   pillLabel: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  pillGhostLabel: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

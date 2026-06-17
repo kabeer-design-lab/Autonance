@@ -36,19 +36,19 @@ export function BudgetBar({ categoryName, spent, limit, currency = '₹' }: Budg
       <View style={styles.header}>
         <View style={styles.left}>
           <View style={[styles.icon, { backgroundColor: cat.bg }]}>
-            <Ionicons name={ICONS[categoryName]} size={14} color={cat.color} />
+            <Ionicons name={ICONS[categoryName]} size={13} color={cat.color} />
           </View>
           <Text style={styles.name}>{categoryName}</Text>
         </View>
         <Text style={[styles.pct, { color: isOver ? colors.expense : colors.textMuted }]}>
-          {isOver ? 'Over budget' : `${pct}%`}
+          {isOver ? 'Over' : `${pct}%`}
         </Text>
       </View>
       <View style={styles.track}>
         <View style={[styles.fill, { width: `${pct}%`, backgroundColor: fillColor }]} />
       </View>
       <View style={styles.footer}>
-        <Text style={styles.spent}>{currency}{spent.toLocaleString('en-IN')} spent</Text>
+        <Text style={styles.spent}>{currency}{spent.toLocaleString('en-IN')}</Text>
         <Text style={styles.limit}>of {currency}{limit.toLocaleString('en-IN')}</Text>
       </View>
     </View>
@@ -70,21 +70,23 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   icon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
   name: {
     ...(typography.bodyMedium as object),
+    fontSize: 15,
     color: colors.textPrimary,
   },
   pct: {
     ...(typography.caption as object),
+    fontWeight: '500',
   },
   track: {
-    height: 6,
+    height: 5,
     borderRadius: radius.full,
     backgroundColor: colors.surfaceOffset,
     overflow: 'hidden',
@@ -100,6 +102,7 @@ const styles = StyleSheet.create({
   spent: {
     ...(typography.caption as object),
     color: colors.textSecondary,
+    fontWeight: '500',
   },
   limit: {
     ...(typography.caption as object),

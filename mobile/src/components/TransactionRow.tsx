@@ -38,7 +38,8 @@ export function TransactionRow({ transaction, onPress, isLast }: TransactionRowP
   const sign = isIncome ? '+' : '-';
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={styles.row}>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.6} style={styles.row}>
+      {/* iOS app-icon style: square with rounded corners */}
       <View style={[styles.icon, { backgroundColor: cat.bg }]}>
         <Ionicons name={ICONS[transaction.category]} size={18} color={cat.color} />
       </View>
@@ -56,11 +57,7 @@ export function TransactionRow({ transaction, onPress, isLast }: TransactionRowP
   );
 }
 
-interface DateSectionHeaderProps {
-  label: string;
-}
-
-export function DateSectionHeader({ label }: DateSectionHeaderProps) {
+export function DateSectionHeader({ label }: { label: string }) {
   return (
     <View style={styles.header}>
       <Text style={styles.headerText}>{label}</Text>
@@ -78,10 +75,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     gap: spacing.md,
   },
+  // Square icon with rounded corners — iOS app icon style
   icon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -105,22 +103,22 @@ const styles = StyleSheet.create({
   divider: {
     position: 'absolute',
     bottom: 0,
-    left: 68,
+    left: 70,
     right: 0,
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
   },
   header: {
-    height: 32,
-    backgroundColor: colors.background,
+    height: 28,
+    backgroundColor: colors.backgroundSecondary,
     justifyContent: 'center',
     paddingHorizontal: spacing.base,
   },
   headerText: {
     ...(typography.caption as object),
-    fontWeight: '500',
+    fontWeight: '600',
     color: colors.textMuted,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
 });

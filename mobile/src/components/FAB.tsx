@@ -2,7 +2,7 @@ import React from 'react';
 import { TouchableOpacity, StyleSheet, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, radius, fabSize } from '../theme';
+import { radius, fabSize } from '../theme';
 
 interface FABProps {
   onPress: () => void;
@@ -16,8 +16,8 @@ export function FAB({ onPress, style }: FABProps) {
   };
 
   return (
-    <TouchableOpacity onPress={handlePress} style={[styles.fab, style]} activeOpacity={0.85}>
-      <Ionicons name="add" size={28} color={colors.textInverse} />
+    <TouchableOpacity onPress={handlePress} style={[styles.fab, style]} activeOpacity={0.8}>
+      <Ionicons name="add" size={30} color="#FFFFFF" />
     </TouchableOpacity>
   );
 }
@@ -27,13 +27,13 @@ const styles = StyleSheet.create({
     width: fabSize,
     height: fabSize,
     borderRadius: radius.full,
-    backgroundColor: colors.primary,
+    backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.primary,
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
     elevation: 8,
   },
 });

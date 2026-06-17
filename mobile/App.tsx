@@ -1,15 +1,10 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, ScrollView, Text } from 'react-native';
-import {
-  useFonts,
-  DMSans_400Regular,
-  DMSans_500Medium,
-  DMSans_700Bold,
-} from '@expo-google-fonts/dm-sans';
-import { DMMono_500Medium } from '@expo-google-fonts/dm-mono';
+import { StyleSheet, View, ScrollView, Text, Dimensions } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useState } from 'react';
 
 import { colors, spacing, typography } from './src/theme';
+import type { CategoryName } from './src/theme';
 import {
   Button,
   FAB,
@@ -23,41 +18,33 @@ import {
   DonutChart,
   LineChart,
   Toast,
+  MeshGradient,
 } from './src/components';
-import { CategoryName } from './src/theme';
-import { useState } from 'react';
 
-const MOCK_TRANSACTIONS = [
-  { id: '1', title: 'Swiggy Instamart', subtitle: 'Groceries', amount: 830, type: 'expense' as const, category: 'Food' as CategoryName, date: '2026-06-17' },
+const { width } = Dimensions.get('window');
+
+const TRANSACTIONS = [
+  { id: '1', title: 'Swiggy Instamart', subtitle: 'Groceries', amount: 830, type: 'expense' as const, category: 'Food' as CategoryName, date: '2026-06-18' },
   { id: '2', title: 'Salary Credit', subtitle: 'HDFC Bank', amount: 85000, type: 'income' as const, category: 'Business' as CategoryName, date: '2026-06-15' },
-  { id: '3', title: 'Ola', subtitle: 'Airport ride', amount: 420, type: 'expense' as const, category: 'Transport' as CategoryName, date: '2026-06-14' },
+  { id: '3', title: 'Ola Ride', subtitle: 'Airport drop', amount: 420, type: 'expense' as const, category: 'Transport' as CategoryName, date: '2026-06-14' },
 ];
 
-const MOCK_DONUT = [
+const DONUT_DATA = [
   { categoryName: 'Food' as CategoryName, amount: 12400 },
   { categoryName: 'Transport' as CategoryName, amount: 6200 },
   { categoryName: 'Shopping' as CategoryName, amount: 9800 },
-  { categoryName: 'Bills' as CategoryName, amount: 4500 },
+  { categoryName: 'Entertainment' as CategoryName, amount: 4100 },
 ];
 
-const MOCK_LINE = [4000, 5200, 4800, 6100, 5600, 7200, 6800, 8100, 7400, 9200, 8500, 10200];
+const LINE_DATA = [4000, 5200, 4800, 6100, 5600, 7200, 6800, 8100, 7400, 9200, 8500, 10200];
 
 export default function App() {
-  const [fontsLoaded] = useFonts({
-    DMSans_400Regular,
-    DMSans_500Medium,
-    DMSans_700Bold,
-    DMMono_500Medium,
-  });
-
   const [amount, setAmount] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<CategoryName | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [inputValue, setInputValue] = useState('');
 
-  if (!fontsLoaded) return null;
-
-  const categories: CategoryName[] = ['Food', 'Transport', 'Shopping', 'Bills', 'Entertainment', 'Health'];
+  const CATEGORIES: CategoryName[] = ['Food', 'Transport', 'Shopping', 'Bills', 'Entertainment', 'Health'];
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -67,34 +54,45 @@ export default function App() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── SummaryCard ── */}
-        <Text style={styles.sectionTitle}>Summary Card</Text>
+
+        {/* ─── Mesh Gradient (Onboarding preview) ─── */}
+        <Label text="Mesh Gradient — Onboarding" />
+        <MeshGradient style={styles.meshPreview}>
+          <View style={styles.meshContent}>
+            <Text style={styles.meshHeadline}>Track money.{'\n'}Effortlessly.</Text>
+            <Text style={styles.meshSub}>Just send a WhatsApp message.</Text>
+            <Button label="Get Started" onPress={() => {}} style={{ marginTop: 24 }} />
+          </View>
+        </MeshGradient>
+
+        {/* ─── Summary Card ─── */}
+        <Label text="Summary Card" />
         <SummaryCard balance={52600} income={85000} expense={32400} />
 
-        {/* ── Buttons ── */}
-        <Text style={styles.sectionTitle}>Buttons</Text>
+        {/* ─── Buttons ─── */}
+        <Label text="Buttons" />
         <Button label="Save Transaction" onPress={() => setToastVisible(true)} />
-        <Button label="Secondary Action" onPress={() => {}} variant="secondary" />
+        <Button label="Secondary" onPress={() => {}} variant="secondary" />
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Button label="+ Add" onPress={() => {}} variant="pill" />
-          <Button label="↗ Send" onPress={() => {}} variant="pill" />
+          <Button label="Filter" onPress={() => {}} variant="pillGhost" />
         </View>
 
-        {/* ── Input ── */}
-        <Text style={styles.sectionTitle}>Text Input</Text>
+        {/* ─── Input ─── */}
+        <Label text="Text Input" />
         <Input label="Note" placeholder="e.g. Lunch at office" value={inputValue} onChangeText={setInputValue} />
 
-        {/* ── Amount Input ── */}
-        <Text style={styles.sectionTitle}>Amount Input</Text>
-        <View style={{ backgroundColor: colors.surface, borderRadius: 14, padding: 16 }}>
+        {/* ─── Amount Input ─── */}
+        <Label text="Amount Input (SF Pro, tabular)" />
+        <View style={styles.card}>
           <AmountInput value={amount} onChange={setAmount} />
         </View>
 
-        {/* ── Category Chips ── */}
-        <Text style={styles.sectionTitle}>Category Chips</Text>
+        {/* ─── Category Chips ─── */}
+        <Label text="Category Chips" />
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 4 }}>
-            {categories.map((c) => (
+          <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 2 }}>
+            {CATEGORIES.map((c) => (
               <CategoryChip
                 key={c}
                 name={c}
@@ -105,46 +103,40 @@ export default function App() {
           </View>
         </ScrollView>
 
-        {/* ── Transaction Rows ── */}
-        <Text style={styles.sectionTitle}>Transaction List</Text>
-        <View style={{ backgroundColor: colors.surface, borderRadius: 14, overflow: 'hidden' }}>
+        {/* ─── Transaction List ─── */}
+        <Label text="Transaction Rows (iOS icon style)" />
+        <View style={[styles.card, { padding: 0, overflow: 'hidden' }]}>
           <DateSectionHeader label="Today" />
-          {MOCK_TRANSACTIONS.map((t, i) => (
-            <TransactionRow
-              key={t.id}
-              transaction={t}
-              isLast={i === MOCK_TRANSACTIONS.length - 1}
-            />
+          {TRANSACTIONS.map((t, i) => (
+            <TransactionRow key={t.id} transaction={t} isLast={i === TRANSACTIONS.length - 1} />
           ))}
         </View>
 
-        {/* ── Budget Bar ── */}
-        <Text style={styles.sectionTitle}>Budget Bars</Text>
-        <View style={{ backgroundColor: colors.surface, borderRadius: 14, padding: 16, gap: 20 }}>
+        {/* ─── Budget Bars ─── */}
+        <Label text="Budget Progress" />
+        <View style={[styles.card, { gap: 20 }]}>
           <BudgetBar categoryName="Food" spent={12400} limit={15000} />
           <BudgetBar categoryName="Shopping" spent={9800} limit={10000} />
           <BudgetBar categoryName="Transport" spent={7200} limit={5000} />
         </View>
 
-        {/* ── Line Chart ── */}
-        <Text style={styles.sectionTitle}>Spend Trend</Text>
-        <View style={{ backgroundColor: colors.surface, borderRadius: 14, padding: 16 }}>
-          <LineChart data={MOCK_LINE} width={320} height={120} />
+        {/* ─── Line Chart ─── */}
+        <Label text="Spend Trend" />
+        <View style={styles.card}>
+          <LineChart data={LINE_DATA} width={width - 80} height={110} />
         </View>
 
-        {/* ── Donut Chart ── */}
-        <Text style={styles.sectionTitle}>Category Breakdown</Text>
-        <View style={{ backgroundColor: colors.surface, borderRadius: 14, padding: 20 }}>
-          <DonutChart data={MOCK_DONUT} total={32900} size={220} />
+        {/* ─── Donut Chart ─── */}
+        <Label text="Category Breakdown" />
+        <View style={styles.card}>
+          <DonutChart data={DONUT_DATA} total={32500} size={Math.min(width - 80, 240)} />
         </View>
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 48 }} />
       </ScrollView>
 
-      {/* FAB */}
       <FAB onPress={() => setToastVisible(true)} style={styles.fab} />
 
-      {/* Toast */}
       <Toast
         visible={toastVisible}
         title="Saved ₹830 · Food · Today"
@@ -155,26 +147,61 @@ export default function App() {
   );
 }
 
+function Label({ text }: { text: string }) {
+  return (
+    <Text style={styles.label}>{text}</Text>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.backgroundSecondary,
   },
   content: {
     padding: spacing.lg,
     paddingTop: 60,
     gap: spacing.sm,
   },
-  sectionTitle: {
-    ...(typography.label as object),
+  label: {
+    ...(typography.caption as object),
     color: colors.textMuted,
+    fontWeight: '600',
     marginTop: spacing.xl,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+  },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.base,
+  },
+  meshPreview: {
+    height: 380,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  meshContent: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    padding: 28,
+    paddingBottom: 32,
+  },
+  meshHeadline: {
+    fontSize: 36,
+    fontWeight: '700',
+    letterSpacing: -1,
+    color: '#000000',
+    lineHeight: 42,
+  },
+  meshSub: {
+    fontSize: 16,
+    color: colors.textMuted,
+    marginTop: 8,
   },
   fab: {
     position: 'absolute',
-    bottom: 32,
+    bottom: 36,
     right: 24,
   },
 });

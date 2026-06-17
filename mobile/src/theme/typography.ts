@@ -1,70 +1,70 @@
-import { TextStyle } from 'react-native';
+import { Platform, TextStyle } from 'react-native';
+
+// SF Pro is the iOS system font — no import needed, React Native uses it by default.
+// SF Mono: use 'Menlo' (pre-installed on iOS, very close to SF Mono).
+// fontVariant: ['tabular-nums'] gives aligned digit widths for amounts.
+
+const mono = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 
 export const fontFamily = {
-  regular:   'DMSans_400Regular',
-  medium:    'DMSans_500Medium',
-  bold:      'DMSans_700Bold',
-  monoMedium: 'DMMono_500Medium',
+  regular: undefined,   // SF Pro Text / SF Pro Display (auto by size)
+  medium: undefined,
+  bold: undefined,
+  mono,
 } as const;
 
 export const typography: Record<string, TextStyle> = {
   display: {
-    fontFamily: fontFamily.bold,
     fontSize: 40,
-    lineHeight: 44,
-    letterSpacing: -0.5,
+    fontWeight: '700',
+    letterSpacing: -1,
   },
   h1: {
-    fontFamily: fontFamily.bold,
     fontSize: 28,
-    lineHeight: 34,
-    letterSpacing: -0.3,
-  },
-  h2: {
-    fontFamily: fontFamily.bold,
-    fontSize: 22,
-    lineHeight: 28,
-    letterSpacing: -0.2,
-  },
-  h3: {
-    fontFamily: fontFamily.medium,
-    fontSize: 18,
-    lineHeight: 24,
-  },
-  body: {
-    fontFamily: fontFamily.regular,
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  bodyMedium: {
-    fontFamily: fontFamily.medium,
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  label: {
-    fontFamily: fontFamily.medium,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  caption: {
-    fontFamily: fontFamily.regular,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  amountLg: {
-    fontFamily: fontFamily.bold,
-    fontSize: 36,
-    lineHeight: 40,
+    fontWeight: '700',
     letterSpacing: -0.5,
   },
+  h2: {
+    fontSize: 22,
+    fontWeight: '600',
+    letterSpacing: -0.3,
+  },
+  h3: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  body: {
+    fontSize: 16,
+    fontWeight: '400',
+  },
+  bodyMedium: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  caption: {
+    fontSize: 12,
+    fontWeight: '400',
+  },
+  amountLg: {
+    fontSize: 36,
+    fontWeight: '700',
+    letterSpacing: -1,
+    fontVariant: ['tabular-nums'],
+  },
   amountMd: {
-    fontFamily: fontFamily.monoMedium,
+    fontFamily: mono,
     fontSize: 20,
-    lineHeight: 24,
+    fontWeight: '500',
+    fontVariant: ['tabular-nums'],
   },
   amountSm: {
-    fontFamily: fontFamily.monoMedium,
-    fontSize: 16,
-    lineHeight: 20,
+    fontFamily: mono,
+    fontSize: 15,
+    fontWeight: '500',
+    fontVariant: ['tabular-nums'],
   },
 };

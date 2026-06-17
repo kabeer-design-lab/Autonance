@@ -11,3 +11,4 @@ export { DonutChart } from './DonutChart';
 export type { DonutSlice } from './DonutChart';
 export { LineChart } from './LineChart';
 export { Toast } from './Toast';
+export { MeshGradient } from './MeshGradient';

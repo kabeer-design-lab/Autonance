@@ -50,7 +50,9 @@ const styles = StyleSheet.create({
   },
   label: {
     ...(typography.caption as object),
+    fontWeight: '500',
     color: colors.textMuted,
+    letterSpacing: 0.2,
   },
   input: {
     height: 52,
@@ -63,7 +65,8 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   inputFocused: {
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
   },
 });

@@ -14,19 +14,19 @@ interface ToastProps {
 
 export function Toast({ visible, title, subtitle, onHide, duration = 3000 }: ToastProps) {
   const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(20)).current;
+  const translateY = useRef(new Animated.Value(16)).current;
 
   useEffect(() => {
     if (visible) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Animated.parallel([
-        Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-        Animated.timing(translateY, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.spring(opacity, { toValue: 1, useNativeDriver: true, speed: 20 }),
+        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, speed: 20, bounciness: 6 }),
       ]).start();
       const timer = setTimeout(() => {
         Animated.parallel([
-          Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-          Animated.timing(translateY, { toValue: 20, duration: 200, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: true }),
+          Animated.timing(translateY, { toValue: 16, duration: 180, useNativeDriver: true }),
         ]).start(() => onHide());
       }, duration);
       return () => clearTimeout(timer);
@@ -37,8 +37,9 @@ export function Toast({ visible, title, subtitle, onHide, duration = 3000 }: Toa
 
   return (
     <Animated.View style={[styles.toast, { opacity, transform: [{ translateY }] }]}>
-      <View style={styles.accent} />
-      <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+      <View style={styles.iconWrap}>
+        <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+      </View>
       <View style={styles.text}>
         <Text style={styles.title}>{title}</Text>
         {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
@@ -50,40 +51,42 @@ export function Toast({ visible, title, subtitle, onHide, duration = 3000 }: Toa
 const styles = StyleSheet.create({
   toast: {
     position: 'absolute',
-    bottom: 100,
+    bottom: 108,
     left: spacing.lg,
     right: spacing.lg,
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     flexDirection: 'row',
     alignItems: 'center',
     padding: spacing.base,
     gap: spacing.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
-    elevation: 10,
-    overflow: 'hidden',
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    elevation: 12,
   },
-  accent: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    backgroundColor: colors.primary,
-    borderRadius: radius.xs,
+  iconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   text: {
     flex: 1,
   },
   title: {
     ...(typography.bodyMedium as object),
+    fontSize: 15,
     color: colors.textPrimary,
   },
   subtitle: {
     ...(typography.caption as object),
     color: colors.textMuted,
+    marginTop: 1,
   },
 });

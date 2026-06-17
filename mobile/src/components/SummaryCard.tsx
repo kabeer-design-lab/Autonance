@@ -26,26 +26,22 @@ export function SummaryCard({
       </Text>
       <View style={styles.row}>
         <View style={styles.stat}>
-          <View style={styles.statIcon}>
-            <Ionicons name="arrow-down-circle-outline" size={16} color="rgba(255,255,255,0.9)" />
+          <View style={[styles.statIcon, { backgroundColor: 'rgba(52,199,89,0.15)' }]}>
+            <Ionicons name="arrow-down-circle-outline" size={15} color={colors.income} />
           </View>
           <View>
             <Text style={styles.statLabel}>Income</Text>
-            <Text style={styles.statAmount}>
-              {currency}{income.toLocaleString('en-IN')}
-            </Text>
+            <Text style={styles.statAmount}>{currency}{income.toLocaleString('en-IN')}</Text>
           </View>
         </View>
         <View style={styles.divider} />
         <View style={styles.stat}>
-          <View style={[styles.statIcon, styles.expenseIcon]}>
-            <Ionicons name="arrow-up-circle-outline" size={16} color="rgba(255,255,255,0.9)" />
+          <View style={[styles.statIcon, { backgroundColor: 'rgba(255,59,48,0.15)' }]}>
+            <Ionicons name="arrow-up-circle-outline" size={15} color={colors.expense} />
           </View>
           <View>
             <Text style={styles.statLabel}>Expenses</Text>
-            <Text style={styles.statAmount}>
-              {currency}{expense.toLocaleString('en-IN')}
-            </Text>
+            <Text style={styles.statAmount}>{currency}{expense.toLocaleString('en-IN')}</Text>
           </View>
         </View>
       </View>
@@ -55,18 +51,18 @@ export function SummaryCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#000000',
     borderRadius: radius.md,
     padding: cardPadding + 4,
     gap: spacing.xs,
   },
   periodLabel: {
     ...(typography.caption as object),
-    color: 'rgba(255,255,255,0.65)',
+    color: 'rgba(255,255,255,0.45)',
   },
   balance: {
     ...(typography.display as object),
-    color: colors.textInverse,
+    color: '#FFFFFF',
     marginBottom: spacing.sm,
   },
   row: {
@@ -74,8 +70,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xl,
     paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.15)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.12)',
   },
   stat: {
     flexDirection: 'row',
@@ -87,24 +83,20 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  expenseIcon: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
-  },
   statLabel: {
     ...(typography.caption as object),
-    color: 'rgba(255,255,255,0.65)',
+    color: 'rgba(255,255,255,0.45)',
   },
   statAmount: {
     ...(typography.label as object),
-    color: colors.textInverse,
+    color: '#FFFFFF',
   },
   divider: {
-    width: 1,
+    width: StyleSheet.hairlineWidth,
     height: 32,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
 });
