@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, typography, spacing, radius, cardPadding } from '../theme';
+import { colors, typography, spacing, radius } from '../theme';
 
 interface SummaryCardProps {
   balance: number;
@@ -16,33 +15,46 @@ export function SummaryCard({
   income,
   expense,
   currency = '₹',
-  period = 'This month',
+  period = 'June 2026',
 }: SummaryCardProps) {
+  const savings = income - expense;
+
   return (
     <View style={styles.card}>
-      <Text style={styles.periodLabel}>{period}</Text>
+      {/* Period label */}
+      <Text style={styles.period}>{period}</Text>
+
+      {/* Balance — hero number in black */}
       <Text style={styles.balance}>
         {currency}{balance.toLocaleString('en-IN')}
       </Text>
-      <View style={styles.row}>
-        <View style={styles.stat}>
-          <View style={[styles.statIcon, { backgroundColor: 'rgba(52,199,89,0.15)' }]}>
-            <Ionicons name="arrow-down-circle-outline" size={15} color={colors.income} />
-          </View>
-          <View>
-            <Text style={styles.statLabel}>Income</Text>
-            <Text style={styles.statAmount}>{currency}{income.toLocaleString('en-IN')}</Text>
-          </View>
+
+      {/* Blue savings pill — the ONE place blue earns its spot */}
+      {savings > 0 && (
+        <View style={styles.savingsPill}>
+          <Text style={styles.savingsText}>
+            You saved {currency}{savings.toLocaleString('en-IN')} this month
+          </Text>
         </View>
-        <View style={styles.divider} />
-        <View style={styles.stat}>
-          <View style={[styles.statIcon, { backgroundColor: 'rgba(255,59,48,0.15)' }]}>
-            <Ionicons name="arrow-up-circle-outline" size={15} color={colors.expense} />
-          </View>
-          <View>
-            <Text style={styles.statLabel}>Expenses</Text>
-            <Text style={styles.statAmount}>{currency}{expense.toLocaleString('en-IN')}</Text>
-          </View>
+      )}
+
+      {/* Divider */}
+      <View style={styles.divider} />
+
+      {/* Income / Expense row */}
+      <View style={styles.row}>
+        <View style={styles.metric}>
+          <Text style={styles.metricLabel}>Money in</Text>
+          <Text style={[styles.metricAmount, { color: colors.income }]}>
+            +{currency}{income.toLocaleString('en-IN')}
+          </Text>
+        </View>
+        <View style={styles.metricDivider} />
+        <View style={styles.metric}>
+          <Text style={styles.metricLabel}>Money out</Text>
+          <Text style={[styles.metricAmount, { color: colors.expense }]}>
+            -{currency}{expense.toLocaleString('en-IN')}
+          </Text>
         </View>
       </View>
     </View>
@@ -51,52 +63,73 @@ export function SummaryCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#000000',
+    backgroundColor: '#FFFFFF',
     borderRadius: radius.md,
-    padding: cardPadding + 4,
-    gap: spacing.xs,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 2,
+    gap: spacing.sm,
   },
-  periodLabel: {
+  period: {
     ...(typography.caption as object),
-    color: 'rgba(255,255,255,0.45)',
+    fontWeight: '500',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   balance: {
-    ...(typography.display as object),
-    color: '#FFFFFF',
-    marginBottom: spacing.sm,
+    fontSize: 42,
+    fontWeight: '700',
+    color: '#000000',
+    letterSpacing: -1.5,
+    lineHeight: 50,
+  },
+  // Blue used here only — because "you saved" is a milestone worth celebrating
+  savingsPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  savingsText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.primary,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#F0F0F0',
+    marginVertical: spacing.xs,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xl,
-    paddingTop: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.12)',
   },
-  stat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
+  metric: {
     flex: 1,
+    gap: 3,
   },
-  statIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
+  metricLabel: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: colors.textMuted,
   },
-  statLabel: {
-    ...(typography.caption as object),
-    color: 'rgba(255,255,255,0.45)',
+  metricAmount: {
+    fontSize: 17,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -0.3,
   },
-  statAmount: {
-    ...(typography.label as object),
-    color: '#FFFFFF',
-  },
-  divider: {
+  metricDivider: {
     width: StyleSheet.hairlineWidth,
     height: 32,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: '#E5E5EA',
+    marginHorizontal: spacing.base,
   },
 });

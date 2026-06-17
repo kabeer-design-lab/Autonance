@@ -22,11 +22,12 @@ import {
 } from './src/components';
 
 const { width } = Dimensions.get('window');
+const CARD_WIDTH = width - spacing.lg * 2;
 
 const TRANSACTIONS = [
-  { id: '1', title: 'Swiggy Instamart', subtitle: 'Groceries', amount: 830, type: 'expense' as const, category: 'Food' as CategoryName, date: '2026-06-18' },
-  { id: '2', title: 'Salary Credit', subtitle: 'HDFC Bank', amount: 85000, type: 'income' as const, category: 'Business' as CategoryName, date: '2026-06-15' },
-  { id: '3', title: 'Ola Ride', subtitle: 'Airport drop', amount: 420, type: 'expense' as const, category: 'Transport' as CategoryName, date: '2026-06-14' },
+  { id: '1', title: 'Swiggy Instamart', subtitle: 'Bought groceries for the week', amount: 830, type: 'expense' as const, category: 'Food' as CategoryName, date: '2026-06-18' },
+  { id: '2', title: 'Salary', subtitle: 'June payout from Razorpay', amount: 85000, type: 'income' as const, category: 'Business' as CategoryName, date: '2026-06-15' },
+  { id: '3', title: 'Ola', subtitle: 'Ride to airport, Terminal 2', amount: 420, type: 'expense' as const, category: 'Transport' as CategoryName, date: '2026-06-14' },
 ];
 
 const DONUT_DATA = [
@@ -55,41 +56,50 @@ export default function App() {
         showsVerticalScrollIndicator={false}
       >
 
-        {/* ─── Mesh Gradient (Onboarding preview) ─── */}
-        <Label text="Mesh Gradient — Onboarding" />
+        {/* ─── Onboarding / Mesh Gradient ─── */}
+        <SectionLabel text="Onboarding screen" />
         <MeshGradient style={styles.meshPreview}>
           <View style={styles.meshContent}>
-            <Text style={styles.meshHeadline}>Track money.{'\n'}Effortlessly.</Text>
-            <Text style={styles.meshSub}>Just send a WhatsApp message.</Text>
-            <Button label="Get Started" onPress={() => {}} style={{ marginTop: 24 }} />
+            <Text style={styles.meshEyebrow}>AUTONANCE</Text>
+            <Text style={styles.meshHeadline}>Know where{'\n'}your money goes.</Text>
+            <Text style={styles.meshSub}>
+              Send a message on WhatsApp.{'\n'}We log it, sort it, and show you the full picture.
+            </Text>
+            <View style={styles.meshButtons}>
+              <Button label="Create free account" onPress={() => {}} style={{ flex: 1 }} />
+              <Button label="I have an account" onPress={() => {}} variant="secondary" style={{ flex: 1 }} />
+            </View>
           </View>
         </MeshGradient>
 
-        {/* ─── Summary Card ─── */}
-        <Label text="Summary Card" />
+        {/* ─── Balance card ─── */}
+        <SectionLabel text="Balance card" />
         <SummaryCard balance={52600} income={85000} expense={32400} />
 
         {/* ─── Buttons ─── */}
-        <Label text="Buttons" />
-        <Button label="Save Transaction" onPress={() => setToastVisible(true)} />
-        <Button label="Secondary" onPress={() => {}} variant="secondary" />
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Button label="+ Add" onPress={() => {}} variant="pill" />
-          <Button label="Filter" onPress={() => {}} variant="pillGhost" />
-        </View>
+        <SectionLabel text="Buttons — always black pill" />
+        <Button label="Add an expense" onPress={() => setToastVisible(true)} />
+        <Button label="View all transactions" onPress={() => {}} variant="secondary" />
+        <Button label="Maybe later" onPress={() => {}} variant="ghost" />
 
         {/* ─── Input ─── */}
-        <Label text="Text Input" />
-        <Input label="Note" placeholder="e.g. Lunch at office" value={inputValue} onChangeText={setInputValue} />
+        <SectionLabel text="Input — blue focus is the only accent" />
+        <Input
+          label="What was it for?"
+          placeholder="e.g. Lunch with Priya"
+          value={inputValue}
+          onChangeText={setInputValue}
+        />
 
-        {/* ─── Amount Input ─── */}
-        <Label text="Amount Input (SF Pro, tabular)" />
+        {/* ─── Amount input ─── */}
+        <SectionLabel text="Amount entry" />
         <View style={styles.card}>
+          <Text style={styles.cardLabel}>How much did you spend?</Text>
           <AmountInput value={amount} onChange={setAmount} />
         </View>
 
-        {/* ─── Category Chips ─── */}
-        <Label text="Category Chips" />
+        {/* ─── Category chips ─── */}
+        <SectionLabel text="What was it?" />
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 2 }}>
             {CATEGORIES.map((c) => (
@@ -103,81 +113,95 @@ export default function App() {
           </View>
         </ScrollView>
 
-        {/* ─── Transaction List ─── */}
-        <Label text="Transaction Rows (iOS icon style)" />
-        <View style={[styles.card, { padding: 0, overflow: 'hidden' }]}>
+        {/* ─── Transaction list ─── */}
+        <SectionLabel text="Recent spending" />
+        <View style={styles.card}>
           <DateSectionHeader label="Today" />
           {TRANSACTIONS.map((t, i) => (
             <TransactionRow key={t.id} transaction={t} isLast={i === TRANSACTIONS.length - 1} />
           ))}
         </View>
 
-        {/* ─── Budget Bars ─── */}
-        <Label text="Budget Progress" />
-        <View style={[styles.card, { gap: 20 }]}>
+        {/* ─── Budget bars ─── */}
+        <SectionLabel text="Are you on track?" />
+        <View style={[styles.card, { gap: 22 }]}>
           <BudgetBar categoryName="Food" spent={12400} limit={15000} />
           <BudgetBar categoryName="Shopping" spent={9800} limit={10000} />
           <BudgetBar categoryName="Transport" spent={7200} limit={5000} />
         </View>
 
-        {/* ─── Line Chart ─── */}
-        <Label text="Spend Trend" />
+        {/* ─── Line chart ─── */}
+        <SectionLabel text="Your spending over time" />
         <View style={styles.card}>
-          <LineChart data={LINE_DATA} width={width - 80} height={110} />
+          <LineChart data={LINE_DATA} width={CARD_WIDTH - 32} height={120} />
         </View>
 
-        {/* ─── Donut Chart ─── */}
-        <Label text="Category Breakdown" />
+        {/* ─── Donut chart ─── */}
+        <SectionLabel text="Where it all went" />
         <View style={styles.card}>
-          <DonutChart data={DONUT_DATA} total={32500} size={Math.min(width - 80, 240)} />
+          <DonutChart data={DONUT_DATA} total={32500} size={Math.min(CARD_WIDTH - 40, 240)} />
         </View>
 
-        <View style={{ height: 48 }} />
+        <View style={{ height: 60 }} />
       </ScrollView>
 
       <FAB onPress={() => setToastVisible(true)} style={styles.fab} />
 
       <Toast
         visible={toastVisible}
-        title="Saved ₹830 · Food · Today"
-        subtitle="Swiggy Instamart"
+        title="Got it — ₹830 on Food"
+        subtitle="Added to today · Swiggy Instamart"
         onHide={() => setToastVisible(false)}
       />
     </GestureHandlerRootView>
   );
 }
 
-function Label({ text }: { text: string }) {
-  return (
-    <Text style={styles.label}>{text}</Text>
-  );
+function SectionLabel({ text }: { text: string }) {
+  return <Text style={styles.sectionLabel}>{text}</Text>;
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.backgroundSecondary,
+    backgroundColor: '#FFFFFF',
   },
   content: {
-    padding: spacing.lg,
-    paddingTop: 60,
+    paddingHorizontal: spacing.lg,
+    paddingTop: 64,
     gap: spacing.sm,
   },
-  label: {
-    ...(typography.caption as object),
-    color: colors.textMuted,
+  sectionLabel: {
+    fontSize: 11,
     fontWeight: '600',
-    marginTop: spacing.xl,
+    color: colors.textMuted,
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    letterSpacing: 0.7,
+    marginTop: spacing.xl,
   },
+  // Shared card shell — white, subtle shadow, thin border
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: spacing.base,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
+    overflow: 'hidden',
   },
+  cardLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textMuted,
+    marginBottom: 4,
+  },
+  // Mesh gradient section
   meshPreview: {
-    height: 380,
+    height: 420,
     borderRadius: 20,
     overflow: 'hidden',
   },
@@ -185,18 +209,30 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     padding: 28,
-    paddingBottom: 32,
+    paddingBottom: 36,
+    gap: 12,
+  },
+  meshEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 2,
+    color: colors.textMuted,
   },
   meshHeadline: {
-    fontSize: 36,
+    fontSize: 38,
     fontWeight: '700',
-    letterSpacing: -1,
+    letterSpacing: -1.2,
     color: '#000000',
-    lineHeight: 42,
+    lineHeight: 44,
   },
   meshSub: {
-    fontSize: 16,
-    color: colors.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.textSecondary,
+  },
+  meshButtons: {
+    flexDirection: 'column',
+    gap: 10,
     marginTop: 8,
   },
   fab: {

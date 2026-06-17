@@ -30,18 +30,16 @@ export function CategoryChip({ name, selected = false, onPress, style }: Categor
       activeOpacity={0.65}
       style={[
         styles.chip,
-        selected
-          ? { backgroundColor: cat.bg, borderColor: cat.color }
-          : { backgroundColor: colors.surface2, borderColor: 'transparent' },
+        selected ? styles.chipSelected : styles.chipDefault,
         style,
       ]}
     >
       <Ionicons
         name={ICONS[name]}
-        size={15}
+        size={14}
         color={selected ? cat.color : colors.textMuted}
       />
-      <Text style={[styles.label, { color: selected ? cat.color : colors.textSecondary }]}>
+      <Text style={[styles.label, selected ? { color: cat.color } : { color: colors.textSecondary }]}>
         {name}
       </Text>
     </TouchableOpacity>
@@ -52,14 +50,23 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 38,
+    height: 36,
     borderRadius: radius.full,
-    borderWidth: 1,
     paddingHorizontal: spacing.md,
-    gap: 6,
+    gap: 5,
+    borderWidth: 1,
+  },
+  chipDefault: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E5E5EA',
+  },
+  chipSelected: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#000000',
+    borderWidth: 1.5,
   },
   label: {
-    ...(typography.label as object),
     fontSize: 13,
+    fontWeight: '500',
   },
 });

@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { colors, typography, radius, spacing } from '../theme';
 
-type Variant = 'primary' | 'secondary' | 'pill' | 'pillGhost';
+type Variant = 'primary' | 'secondary' | 'ghost';
 
 interface ButtonProps {
   label: string;
@@ -31,11 +31,11 @@ export function Button({
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled || loading}
-      activeOpacity={0.75}
+      activeOpacity={0.78}
       style={[styles.base, styles[variant], disabled && styles.disabled, style]}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'secondary' || variant === 'pillGhost' ? colors.textPrimary : '#FFFFFF'} />
+        <ActivityIndicator color={variant === 'primary' ? '#FFFFFF' : colors.textPrimary} size="small" />
       ) : (
         <Text style={[styles.label, styles[`${variant}Label` as keyof typeof styles] as object]}>
           {label}
@@ -47,55 +47,43 @@ export function Button({
 
 const styles = StyleSheet.create({
   base: {
-    height: 52,
+    height: 54,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.sm,
+    borderRadius: radius.full,          // full pill — always
     paddingHorizontal: spacing.xl,
   },
   primary: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#000000',
   },
   secondary: {
-    backgroundColor: colors.surface2,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
   },
-  pill: {
-    height: 36,
-    backgroundColor: '#000000',
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.base,
-  },
-  pillGhost: {
-    height: 36,
-    backgroundColor: colors.surface2,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.base,
+  ghost: {
+    backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: colors.border,
   },
   disabled: {
-    opacity: 0.4,
+    opacity: 0.35,
   },
   label: {
     ...(typography.label as object),
+    fontSize: 15,
     letterSpacing: -0.1,
   },
   primaryLabel: {
     color: '#FFFFFF',
+    fontWeight: '600',
   },
   secondaryLabel: {
-    color: colors.textPrimary,
+    color: '#000000',
+    fontWeight: '600',
   },
-  pillLabel: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  pillGhostLabel: {
-    color: colors.textPrimary,
-    fontSize: 14,
+  ghostLabel: {
+    color: colors.textSecondary,
     fontWeight: '500',
   },
 });

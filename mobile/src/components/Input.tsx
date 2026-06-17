@@ -49,24 +49,24 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   label: {
-    ...(typography.caption as object),
+    fontSize: 12,
     fontWeight: '500',
     color: colors.textMuted,
-    letterSpacing: 0.2,
+    letterSpacing: 0.3,
   },
   input: {
     height: 52,
-    backgroundColor: colors.surface2,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E5E5EA',
     borderRadius: radius.sm,
     paddingHorizontal: spacing.base,
     ...(typography.body as object),
     color: colors.textPrimary,
   },
+  // Blue earns its place here — focus state is a clear functional signal
   inputFocused: {
     borderWidth: 1.5,
     borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
   },
 });
