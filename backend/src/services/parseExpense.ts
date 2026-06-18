@@ -6,7 +6,7 @@ const client = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
-const MODEL = 'google/gemini-flash-1.5';
+const MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
 
 const SYSTEM_PROMPT = `You are a financial assistant. Parse the user's message and return ONLY a JSON object — no prose, no markdown.
 
