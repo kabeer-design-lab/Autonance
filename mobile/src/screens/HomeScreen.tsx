@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing } from '../theme';
 import { SummaryCard, LineChart, TransactionRow, DateSectionHeader } from '../components';
@@ -10,7 +10,7 @@ const { width } = Dimensions.get('window');
 const CARD_W = width - spacing.lg * 2;
 
 export function HomeScreen({ navigation }: any) {
-  const { transactions } = useTransactions();
+  const { transactions, syncing, refresh } = useTransactions();
 
   const monthTx = useMemo(() => thisMonth(transactions), [transactions]);
   const summary = useMemo(() => summarize(monthTx), [monthTx]);
@@ -28,7 +28,11 @@ export function HomeScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={syncing} onRefresh={refresh} />}
+      >
         {/* Header */}
         <View style={styles.header}>
           <View>

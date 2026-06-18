@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TextInput } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TextInput, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius } from '../theme';
@@ -10,7 +10,7 @@ import { groupByDate } from '../lib/format';
 type Filter = 'all' | 'income' | 'expense';
 
 export function TransactionsScreen() {
-  const { transactions } = useTransactions();
+  const { transactions, syncing, refresh } = useTransactions();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
 
@@ -64,7 +64,11 @@ export function TransactionsScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={syncing} onRefresh={refresh} />}
+      >
         {groups.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="receipt-outline" size={40} color={colors.textMuted} />
