@@ -8,6 +8,7 @@ const client = new OpenAI({
 
 const TEXT_MODEL = 'openai/gpt-oss-120b:free';
 const VISION_MODEL = 'nvidia/nemotron-nano-12b-v2-vl:free';
+const VISION_FALLBACK = 'google/gemma-4-31b-it:free';
 
 const today = () => new Date().toISOString().split('T')[0];
 
@@ -70,22 +71,34 @@ export async function parseExpense(message: string): Promise<ParsedTransaction> 
 /** Parse a receipt / payment screenshot / invoice image into a transaction. */
 export async function parseReceiptImage(base64: string, mimeType: string): Promise<ParsedTransaction> {
   const dataUri = `data:${mimeType};base64,${base64}`;
-  const response = await client.chat.completions.create({
-    model: VISION_MODEL,
-    max_tokens: 300,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: VISION_PROMPT },
-          { type: 'image_url', image_url: { url: dataUri } },
-        ],
-      },
-    ],
-  });
+  const models = [VISION_MODEL, VISION_FALLBACK];
 
-  const raw = response.choices[0]?.message?.content?.trim() ?? '';
-  return coerce(raw);
+  for (const model of models) {
+    try {
+      console.log(`[parseReceiptImage] trying model: ${model}`);
+      const response = await client.chat.completions.create({
+        model,
+        max_tokens: 300,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: VISION_PROMPT },
+              { type: 'image_url', image_url: { url: dataUri } },
+            ],
+          },
+        ],
+      });
+
+      const raw = response.choices[0]?.message?.content?.trim() ?? '';
+      return coerce(raw);
+    } catch (err) {
+      console.error(`[parseReceiptImage] ${model} failed:`, err);
+      if (model === models[models.length - 1]) throw err;
+    }
+  }
+
+  throw new Error('All vision models failed');
 }
 
 export const LOW_CONFIDENCE_THRESHOLD = 0.65;
