@@ -24,12 +24,22 @@ router.post('/', (req: Request, res: Response) => {
   res.status(200).send('OK');
 
   const body = req.body;
-  if (body?.object !== 'whatsapp_business_account') return;
+  console.log('[Webhook] POST received. object=', body?.object);
+
+  if (body?.object !== 'whatsapp_business_account') {
+    console.log('[Webhook] Ignored — not a whatsapp_business_account event.');
+    return;
+  }
 
   for (const entry of body.entry || []) {
     for (const change of entry.changes || []) {
       const value = change.value;
-      for (const message of value?.messages || []) {
+      const messages = value?.messages || [];
+      const statuses = value?.statuses || [];
+      console.log(`[Webhook] change: ${messages.length} message(s), ${statuses.length} status(es)`);
+
+      for (const message of messages) {
+        console.log(`[Webhook] message from=${message.from} type=${message.type} text="${message.text?.body || ''}"`);
         if (message.type !== 'text') continue; // text only for now
 
         const msg: WhatsAppMessage = {

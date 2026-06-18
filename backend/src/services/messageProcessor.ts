@@ -54,12 +54,14 @@ async function handleTransaction(msg: WhatsAppMessage): Promise<void> {
 
   try {
     const link = await getUserByPhone(msg.from);
+    console.log(`[handleTransaction] phone=${msg.from} link=${link ? `workspace ${link.workspace_id}` : 'NOT FOUND'}`);
     if (!link) {
       await sendWhatsAppMessage(msg.from, `Your number isn't linked to an Autonance account yet. Open the app and connect WhatsApp from Settings.`);
       return;
     }
 
     await insertTransaction(link.workspace_id, link.user_id, parsed, msg.text);
+    console.log(`[handleTransaction] saved ₹${parsed.amount} ${parsed.category} for workspace ${link.workspace_id}`);
     await sendWhatsAppMessage(msg.from, formatConfirmation(parsed.amount, parsed.currency, parsed.type, parsed.category, parsed.date, parsed.payee));
   } catch (err) {
     console.error('[handleTransaction] DB error:', err);
