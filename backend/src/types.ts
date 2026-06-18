@@ -30,6 +30,8 @@ export interface ParsedTransaction {
 
 export interface WhatsAppMessage {
   from: string;           // sender's phone number
-  text: string;
+  text: string;           // body text, or image caption (may be empty)
   messageId: string;
+  kind: 'text' | 'image'; // what the user actually sent
+  mediaId?: string;       // present when kind === 'image'
 }

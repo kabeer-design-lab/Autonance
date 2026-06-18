@@ -1,13 +1,19 @@
-import { parseExpense, LOW_CONFIDENCE_THRESHOLD } from './parseExpense';
+import { parseExpense, parseReceiptImage, LOW_CONFIDENCE_THRESHOLD } from './parseExpense';
 import { insertTransaction, getMonthlySummary, getUserByPhone } from './db';
-import { sendWhatsAppMessage, formatConfirmation, formatSummary } from './whatsapp';
-import { WhatsAppMessage } from '../types';
+import { sendWhatsAppMessage, formatConfirmation, formatSummary, downloadMedia } from './whatsapp';
+import { WhatsAppMessage, ParsedTransaction } from '../types';
 
 const REPORT_KEYWORDS = /\b(summary|report|show|spent|spending|total|balance|how much|income|expense|this week|this month|today|yesterday|january|february|march|april|may|june|july|august|september|october|november|december)\b/i;
 const TRANSACTION_PATTERN = /[\d,]+(\.\d+)?|₹|\$|£|€|inr|usd|eur|spent|paid|received|salary|bought|purchased|income|expense/i;
 const HELP_KEYWORDS = /\b(help|hi|hello|start|commands|what can|how)\b/i;
 
 export async function processMessage(msg: WhatsAppMessage): Promise<void> {
+  // Route: image (receipt / payment screenshot / invoice)
+  if (msg.kind === 'image') {
+    await handleImage(msg);
+    return;
+  }
+
   const text = msg.text.trim();
   const lower = text.toLowerCase();
 
@@ -42,7 +48,34 @@ async function handleTransaction(msg: WhatsAppMessage): Promise<void> {
     await sendWhatsAppMessage(msg.from, `Sorry, I couldn't read that. Try: "Spent 500 on lunch" or "Received 10000 salary".`);
     return;
   }
+  await saveParsedTransaction(msg, parsed, msg.text);
+}
 
+async function handleImage(msg: WhatsAppMessage): Promise<void> {
+  if (!msg.mediaId) return;
+
+  // Let the user know we're working — image parsing takes a few seconds.
+  await sendWhatsAppMessage(msg.from, `📸 Reading your receipt…`);
+
+  let parsed: ParsedTransaction;
+  try {
+    const { base64, mimeType } = await downloadMedia(msg.mediaId);
+    console.log(`[handleImage] downloaded media ${msg.mediaId} (${mimeType}, ${Math.round(base64.length / 1024)}KB)`);
+    parsed = await parseReceiptImage(base64, mimeType);
+  } catch (err) {
+    console.error('[handleImage] error:', err);
+    await sendWhatsAppMessage(msg.from, `Sorry, I couldn't read that image. Make sure the amount is clearly visible, or just type the amount instead.`);
+    return;
+  }
+  await saveParsedTransaction(msg, parsed, msg.text || '[receipt image]');
+}
+
+/** Shared: confidence guardrail, workspace lookup, insert, and confirmation reply. */
+async function saveParsedTransaction(
+  msg: WhatsAppMessage,
+  parsed: ParsedTransaction,
+  rawForRecord: string,
+): Promise<void> {
   // AI guardrail: ask for clarification if confidence is low
   if (parsed.confidence < LOW_CONFIDENCE_THRESHOLD) {
     await sendWhatsAppMessage(
@@ -54,17 +87,17 @@ async function handleTransaction(msg: WhatsAppMessage): Promise<void> {
 
   try {
     const link = await getUserByPhone(msg.from);
-    console.log(`[handleTransaction] phone=${msg.from} link=${link ? `workspace ${link.workspace_id}` : 'NOT FOUND'}`);
+    console.log(`[save] phone=${msg.from} link=${link ? `workspace ${link.workspace_id}` : 'NOT FOUND'}`);
     if (!link) {
       await sendWhatsAppMessage(msg.from, `Your number isn't linked to an Autonance account yet. Open the app and connect WhatsApp from Settings.`);
       return;
     }
 
-    await insertTransaction(link.workspace_id, link.user_id, parsed, msg.text);
-    console.log(`[handleTransaction] saved ₹${parsed.amount} ${parsed.category} for workspace ${link.workspace_id}`);
+    await insertTransaction(link.workspace_id, link.user_id, parsed, rawForRecord);
+    console.log(`[save] saved ${parsed.currency} ${parsed.amount} ${parsed.category} for workspace ${link.workspace_id}`);
     await sendWhatsAppMessage(msg.from, formatConfirmation(parsed.amount, parsed.currency, parsed.type, parsed.category, parsed.date, parsed.payee));
   } catch (err) {
-    console.error('[handleTransaction] DB error:', err);
+    console.error('[save] DB error:', err);
     await sendWhatsAppMessage(msg.from, `Saved to memory, but had trouble storing it. Please try again.`);
   }
 }
@@ -87,5 +120,5 @@ async function handleSummaryRequest(msg: WhatsAppMessage): Promise<void> {
 }
 
 function helpText(): string {
-  return `👋 *Autonance* — track money by chatting!\n\n*Log an expense:*\n• Spent 500 on lunch\n• Paid 2000 for electricity\n• Bought groceries 350 at DMart\n\n*Log income:*\n• Received 50000 salary\n• Got paid 5000 from client\n\n*Get a summary:*\n• Summary\n• How much did I spend this month?\n\nTransactions sync to your Autonance app instantly.`;
+  return `👋 *Autonance* — track money by chatting!\n\n*Log an expense:*\n• Spent 500 on lunch\n• Paid 2000 for electricity\n• Bought groceries 350 at DMart\n\n*Log income:*\n• Received 50000 salary\n• Got paid 5000 from client\n\n*Snap a receipt:*\n• 📸 Send a photo of a receipt, bill, or a PhonePe/GPay screenshot — we'll read it automatically.\n\n*Get a summary:*\n• Summary\n• How much did I spend this month?\n\nTransactions sync to your Autonance app instantly.`;
 }

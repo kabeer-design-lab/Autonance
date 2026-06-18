@@ -39,14 +39,28 @@ router.post('/', (req: Request, res: Response) => {
       console.log(`[Webhook] change: ${messages.length} message(s), ${statuses.length} status(es)`);
 
       for (const message of messages) {
-        console.log(`[Webhook] message from=${message.from} type=${message.type} text="${message.text?.body || ''}"`);
-        if (message.type !== 'text') continue; // text only for now
+        console.log(`[Webhook] message from=${message.from} type=${message.type}`);
 
-        const msg: WhatsAppMessage = {
-          from: message.from,
-          text: message.text?.body || '',
-          messageId: message.id,
-        };
+        let msg: WhatsAppMessage | null = null;
+
+        if (message.type === 'text') {
+          msg = {
+            from: message.from,
+            text: message.text?.body || '',
+            messageId: message.id,
+            kind: 'text',
+          };
+        } else if (message.type === 'image') {
+          msg = {
+            from: message.from,
+            text: message.image?.caption || '',
+            messageId: message.id,
+            kind: 'image',
+            mediaId: message.image?.id,
+          };
+        } else {
+          continue; // unsupported type (audio, sticker, etc.)
+        }
 
         // Process async — don't await (webhook already replied 200)
         processMessage(msg).catch(err =>
