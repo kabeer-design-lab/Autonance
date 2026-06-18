@@ -7,14 +7,13 @@ const supabase = createClient(
 );
 
 export async function getUserByPhone(phone: string) {
-  // Meta sends numbers without +, app stores them with +. Normalise both ways.
-  const withPlus = phone.startsWith('+') ? phone : `+${phone}`;
-  const withoutPlus = phone.startsWith('+') ? phone.slice(1) : phone;
+  // Meta sends numbers without +, app stores them with +. Always normalise to +.
+  const normalised = phone.startsWith('+') ? phone : `+${phone}`;
 
   const { data } = await supabase
     .from('whatsapp_links')
     .select('user_id, workspace_id')
-    .or(`phone.eq.${withPlus},phone.eq.${withoutPlus}`)
+    .eq('phone', normalised)
     .single();
   return data;
 }
