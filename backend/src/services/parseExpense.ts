@@ -1,7 +1,12 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { ParsedTransaction, Category, VALID_CATEGORIES } from '../types';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const client = new OpenAI({
+  baseURL: 'https://openrouter.ai/api/v1',
+  apiKey: process.env.OPENROUTER_API_KEY,
+});
+
+const MODEL = 'google/gemini-flash-1.5';
 
 const SYSTEM_PROMPT = `You are a financial assistant. Parse the user's message and return ONLY a JSON object — no prose, no markdown.
 
@@ -19,30 +24,31 @@ JSON keys (all required):
 If the amount is unclear or missing, set confidence below 0.6.`;
 
 export async function parseExpense(message: string): Promise<ParsedTransaction> {
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+  const response = await client.chat.completions.create({
+    model: MODEL,
     max_tokens: 256,
     messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: message },
     ],
-    system: SYSTEM_PROMPT,
   });
 
-  const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
+  const raw = response.choices[0]?.message?.content?.trim() ?? '';
+
+  // Strip markdown code fences if the model wraps in ```json ... ```
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
 
   let parsed: ParsedTransaction;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(cleaned);
   } catch {
     throw new Error(`AI returned unparseable response: ${raw}`);
   }
 
-  // Validate and coerce category
   if (!VALID_CATEGORIES.includes(parsed.category as Category)) {
     parsed.category = 'Other';
   }
 
-  // Clamp confidence
   parsed.confidence = Math.max(0, Math.min(1, Number(parsed.confidence) || 0));
 
   return parsed;

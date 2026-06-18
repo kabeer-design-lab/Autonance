@@ -9,7 +9,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^4.67.0",
     "@supabase/supabase-js": "^2.49.0",
     "axios": "^1.7.0",
     "cors": "^2.8.5",
