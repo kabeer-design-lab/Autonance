@@ -6,7 +6,7 @@ const client = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
-const MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
+const MODEL = 'openai/gpt-oss-120b:free';
 
 const SYSTEM_PROMPT = `You are a financial assistant. Parse the user's message and return ONLY a JSON object — no prose, no markdown.
 
