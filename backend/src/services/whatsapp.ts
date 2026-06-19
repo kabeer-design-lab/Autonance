@@ -28,21 +28,28 @@ export async function sendWhatsAppMessage(to: string, text: string): Promise<voi
     return;
   }
 
-  await axios.post(
-    `${BASE_URL}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
-    {
-      messaging_product: 'whatsapp',
-      to,
-      type: 'text',
-      text: { body: text },
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-        'Content-Type': 'application/json',
+  try {
+    const resp = await axios.post(
+      `${BASE_URL}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body: text },
       },
-    },
-  );
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+    console.log(`[WhatsApp] sent to ${to}: ${resp.status}`);
+  } catch (err: any) {
+    const data = err.response?.data;
+    console.error(`[WhatsApp] SEND FAILED to=${to} status=${err.response?.status}`, JSON.stringify(data));
+    throw err;
+  }
 }
 
 export function formatConfirmation(amount: number, currency: string, type: string, category: string, date: string, payee?: string): string {
