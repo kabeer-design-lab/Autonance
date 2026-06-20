@@ -4,6 +4,8 @@ import { ParsedTransaction, Category, VALID_CATEGORIES } from '../types';
 const client = new OpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
   apiKey: process.env.OPENROUTER_API_KEY,
+  maxRetries: 0,      // CRITICAL: default is 2 — retries on a slow free model add minutes of latency
+  timeout: 12_000,    // give up on any single model after 12s and move on
 });
 
 // Model chain: primary → fallback. If primary is rate-limited, fallback kicks in.
@@ -119,8 +121,28 @@ function coerce(raw: string): ParsedTransaction {
   return parsed;
 }
 
+/** Does the rule-based parse look clear enough to skip AI entirely? */
+function isSimpleMessage(message: string): boolean {
+  // Short message with one amount and a recognisable category keyword → rules are enough.
+  const words = message.trim().split(/\s+/);
+  if (words.length > 8) return false;                    // long/complex → use AI
+  const amounts = message.match(/\d[\d,]*(?:\.\d+)?/g) ?? [];
+  if (amounts.length !== 1) return false;                // 0 or multiple amounts → use AI
+  return true;
+}
+
 export async function parseExpense(message: string): Promise<ParsedTransaction> {
-  // Try each AI model in order
+  // FAST PATH: simple messages ("Spent 238 on snacks") are parsed by rules instantly,
+  // no API call, no latency. AI is only used for complex/ambiguous messages.
+  if (isSimpleMessage(message)) {
+    const quick = parseExpenseRuleBased(message);
+    if (quick) {
+      console.log('[parseExpense] fast rule-based path');
+      return quick;
+    }
+  }
+
+  // Complex message — try each AI model in order (fail fast: no retries, 12s timeout)
   for (const model of TEXT_MODELS) {
     try {
       console.log(`[parseExpense] trying model: ${model}`);
@@ -247,15 +269,15 @@ export async function generateInsight(
 
   const prompt = `You are a friendly personal finance assistant. In exactly ONE short sentence (max 15 words), give a helpful and encouraging insight based on these numbers: Income ₹${totalIncome.toLocaleString('en-IN')}, Expenses ₹${totalExpense.toLocaleString('en-IN')}, Net ₹${net.toLocaleString('en-IN')}, Top categories: ${topCats || 'none'}. Be specific, positive, and actionable.`;
 
-  for (const model of TEXT_MODELS) {
-    try {
-      const response = await client.chat.completions.create({
-        model,
-        max_tokens: 60,
-        messages: [{ role: 'user', content: prompt }],
-      });
-      return response.choices[0]?.message?.content?.trim().replace(/^["']|["']$/g, '') ?? '';
-    } catch { /* try next */ }
+  // Insight is optional — try ONLY the primary model so a slow report never stalls.
+  try {
+    const response = await client.chat.completions.create({
+      model: TEXT_MODELS[0],
+      max_tokens: 60,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    return response.choices[0]?.message?.content?.trim().replace(/^["']|["']$/g, '') ?? '';
+  } catch {
+    return '';
   }
-  return '';
 }
