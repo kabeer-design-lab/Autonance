@@ -1,46 +1,155 @@
-import { parseExpense, parseReceiptImage, LOW_CONFIDENCE_THRESHOLD } from './parseExpense';
-import { insertTransaction, getMonthlySummary, getUserByPhone } from './db';
-import { sendWhatsAppMessage, formatConfirmation, formatSummary, downloadMedia } from './whatsapp';
+import { parseExpense, parseReceiptImage, generateInsight, LOW_CONFIDENCE_THRESHOLD } from './parseExpense';
+import {
+  insertTransaction, getMonthlySummary, getTodaySummary,
+  getWeeklySummary, getAllTimeSummary, getUserByPhone,
+} from './db';
+import {
+  sendWhatsAppMessage, sendInteractiveButtons, sendListMessage,
+  formatConfirmation, formatTodaySummary, formatWeeklySummary,
+  formatMonthlySummary, formatBalance, downloadMedia,
+} from './whatsapp';
 import { WhatsAppMessage, ParsedTransaction } from '../types';
 
-const REPORT_KEYWORDS = /\b(summary|report|show|spent|spending|total|balance|how much|income|expense|this week|this month|today|yesterday|january|february|march|april|may|june|july|august|september|october|november|december)\b/i;
-const TRANSACTION_PATTERN = /[\d,]+(\.\d+)?|₹|\$|£|€|inr|usd|eur|spent|paid|received|salary|bought|purchased|income|expense/i;
-const HELP_KEYWORDS = /\b(help|hi|hello|start|commands|what can|how)\b/i;
+// ── Button IDs ────────────────────────────────────────────────────────────────
+const BTN_TODAY   = 'today';
+const BTN_MONTH   = 'month';
+const BTN_MORE    = 'more';
+const BTN_WEEK    = 'week';
+const BTN_BALANCE = 'balance';
 
+// ── Regex routing ─────────────────────────────────────────────────────────────
+const RE_HELP        = /\b(help|hi|hello|start|hey|menu|commands)\b/i;
+const RE_TODAY       = /\b(today|today'?s?)\b/i;
+const RE_WEEK        = /\b(week|this week|7 days|last 7)\b/i;
+const RE_MONTH       = /\b(month|this month|monthly|summary|report|spending|spent|expenses?|how much)\b/i;
+const RE_BALANCE     = /\b(balance|net|total|overview|left)\b/i;
+const RE_TRANSACTION = /[\d,]+(\.\d+)?|₹|\$|£|€|inr|usd|eur|spent|paid|received|salary|bought|purchased|income|expense/i;
+
+// ── Main entry ────────────────────────────────────────────────────────────────
 export async function processMessage(msg: WhatsAppMessage): Promise<void> {
-  // Route: image (receipt / payment screenshot / invoice)
-  if (msg.kind === 'image') {
-    await handleImage(msg);
+  if (msg.kind === 'image') { await handleImage(msg); return; }
+
+  // Button / list tap — route by ID first (most specific)
+  if (msg.kind === 'interactive' && msg.buttonId) {
+    await handleButton(msg, msg.buttonId);
     return;
   }
 
-  const text = msg.text.trim();
+  const text  = msg.text.trim();
   const lower = text.toLowerCase();
 
-  // Route: help / greeting
-  if (HELP_KEYWORDS.test(lower) && !TRANSACTION_PATTERN.test(text)) {
-    await sendWhatsAppMessage(msg.from, helpText());
-    return;
-  }
+  if (RE_HELP.test(lower) && !RE_TRANSACTION.test(text)) { await handleWelcome(msg); return; }
+  if (RE_TODAY.test(lower) && !RE_TRANSACTION.test(text)) { await handleTodayReport(msg); return; }
+  if (RE_WEEK.test(lower) && !RE_TRANSACTION.test(text))  { await handleWeeklyReport(msg); return; }
+  if (RE_BALANCE.test(lower) && !RE_TRANSACTION.test(text)) { await handleBalance(msg); return; }
+  if (RE_MONTH.test(lower) && !RE_TRANSACTION.test(text)) { await handleMonthlyReport(msg); return; }
+  if (RE_TRANSACTION.test(text)) { await handleTransaction(msg); return; }
 
-  // Route: report/summary request
-  if (REPORT_KEYWORDS.test(lower) && !TRANSACTION_PATTERN.test(text)) {
-    await handleSummaryRequest(msg);
-    return;
-  }
-
-  // Route: transaction (has amounts/keywords)
-  if (TRANSACTION_PATTERN.test(text)) {
-    await handleTransaction(msg);
-    return;
-  }
-
-  // Fallback
-  await sendWhatsAppMessage(msg.from, `I didn't understand that. Reply *help* to see what I can do.`);
+  await sendInteractiveButtons(
+    msg.from,
+    "I didn't quite get that. What would you like to do?",
+    [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
+  );
 }
 
+// ── Button dispatcher ─────────────────────────────────────────────────────────
+async function handleButton(msg: WhatsAppMessage, id: string): Promise<void> {
+  if (id === BTN_TODAY)   { await handleTodayReport(msg);   return; }
+  if (id === BTN_MONTH)   { await handleMonthlyReport(msg); return; }
+  if (id === BTN_WEEK)    { await handleWeeklyReport(msg);  return; }
+  if (id === BTN_BALANCE) { await handleBalance(msg);       return; }
+  if (id === BTN_MORE)    { await handleMoreMenu(msg);      return; }
+  await handleWelcome(msg);
+}
+
+// ── Welcome / main menu ───────────────────────────────────────────────────────
+async function handleWelcome(msg: WhatsAppMessage): Promise<void> {
+  await sendInteractiveButtons(
+    msg.from,
+    '👋 Hey! I\'m Autonance — your money tracker.\n\nLog expenses by typing:\n  "Spent 500 on lunch"\n  "Received 50000 salary"\n\nOr snap a photo of any receipt 📸\n\nWhat would you like to see?',
+    [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
+  );
+}
+
+// ── More options (list menu) ──────────────────────────────────────────────────
+async function handleMoreMenu(msg: WhatsAppMessage): Promise<void> {
+  await sendListMessage(
+    msg.from,
+    '⚡ *More options* — tap one to explore:',
+    'View options',
+    [
+      {
+        title: 'Reports',
+        rows: [
+          { id: BTN_WEEK,    title: '📆 This Week',    description: 'Last 7 days breakdown' },
+          { id: BTN_BALANCE, title: '💰 Net Balance',  description: 'All-time income vs expenses' },
+          { id: BTN_TODAY,   title: '📊 Today',        description: "Today's spending snapshot" },
+        ],
+      },
+    ],
+  );
+}
+
+// ── Today's report ────────────────────────────────────────────────────────────
+async function handleTodayReport(msg: WhatsAppMessage): Promise<void> {
+  const link = await getUserByPhone(msg.from);
+  if (!link) { await notLinked(msg.from); return; }
+
+  const s = await getTodaySummary(link.workspace_id);
+  const body = formatTodaySummary(s.totalIncome, s.totalExpense, s.byCategory);
+  await sendInteractiveButtons(
+    msg.from, body,
+    [{ id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_BALANCE, title: '💰 Balance' }, { id: BTN_MORE, title: '⚡ More' }],
+  );
+}
+
+// ── Weekly report ─────────────────────────────────────────────────────────────
+async function handleWeeklyReport(msg: WhatsAppMessage): Promise<void> {
+  const link = await getUserByPhone(msg.from);
+  if (!link) { await notLinked(msg.from); return; }
+
+  const s = await getWeeklySummary(link.workspace_id);
+  const body = formatWeeklySummary(s.totalIncome, s.totalExpense, s.byCategory);
+  await sendInteractiveButtons(
+    msg.from, body,
+    [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_BALANCE, title: '💰 Balance' }],
+  );
+}
+
+// ── Monthly report ────────────────────────────────────────────────────────────
+async function handleMonthlyReport(msg: WhatsAppMessage): Promise<void> {
+  const link = await getUserByPhone(msg.from);
+  if (!link) { await notLinked(msg.from); return; }
+
+  const now = new Date();
+  const s   = await getMonthlySummary(link.workspace_id, now.getFullYear(), now.getMonth() + 1);
+
+  let insight: string | undefined;
+  try { insight = await generateInsight(s.totalIncome, s.totalExpense, s.byCategory); } catch { /* skip */ }
+
+  const body = formatMonthlySummary(s.totalIncome, s.totalExpense, s.byCategory, insight);
+  await sendInteractiveButtons(
+    msg.from, body,
+    [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_WEEK, title: '📆 This Week' }, { id: BTN_BALANCE, title: '💰 Balance' }],
+  );
+}
+
+// ── Balance ───────────────────────────────────────────────────────────────────
+async function handleBalance(msg: WhatsAppMessage): Promise<void> {
+  const link = await getUserByPhone(msg.from);
+  if (!link) { await notLinked(msg.from); return; }
+
+  const s    = await getAllTimeSummary(link.workspace_id);
+  const body = formatBalance(s.totalIncome, s.totalExpense);
+  await sendInteractiveButtons(
+    msg.from, body,
+    [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
+  );
+}
+
+// ── Transaction (text) ────────────────────────────────────────────────────────
 async function handleTransaction(msg: WhatsAppMessage): Promise<void> {
-  let parsed;
+  let parsed: ParsedTransaction;
   try {
     parsed = await parseExpense(msg.text);
   } catch (err) {
@@ -51,10 +160,9 @@ async function handleTransaction(msg: WhatsAppMessage): Promise<void> {
   await saveParsedTransaction(msg, parsed, msg.text);
 }
 
+// ── Image (receipt) ───────────────────────────────────────────────────────────
 async function handleImage(msg: WhatsAppMessage): Promise<void> {
   if (!msg.mediaId) return;
-
-  // Let the user know we're working — image parsing takes a few seconds.
   await sendWhatsAppMessage(msg.from, `📸 Reading your receipt…`);
 
   let parsed: ParsedTransaction;
@@ -70,55 +178,36 @@ async function handleImage(msg: WhatsAppMessage): Promise<void> {
   await saveParsedTransaction(msg, parsed, msg.text || '[receipt image]');
 }
 
-/** Shared: confidence guardrail, workspace lookup, insert, and confirmation reply. */
+// ── Shared save + confirm ─────────────────────────────────────────────────────
 async function saveParsedTransaction(
-  msg: WhatsAppMessage,
-  parsed: ParsedTransaction,
-  rawForRecord: string,
+  msg: WhatsAppMessage, parsed: ParsedTransaction, rawForRecord: string,
 ): Promise<void> {
-  // AI guardrail: ask for clarification if confidence is low
   if (parsed.confidence < LOW_CONFIDENCE_THRESHOLD) {
-    await sendWhatsAppMessage(
+    await sendInteractiveButtons(
       msg.from,
-      `I'm not sure I understood correctly. Could you clarify?\n\nI read: *${parsed.type}* of *${parsed.currency} ${parsed.amount}* under *${parsed.category}*.\n\nIs that right? Reply *yes* to save or send the correct details.`,
+      `I'm not 100% sure I read that right.\n\nI understood: *${parsed.type}* of *${parsed.currency} ${parsed.amount}* under *${parsed.category}*.\n\nIs that correct?`,
+      [{ id: `confirm_yes`, title: '✅ Yes, save it' }, { id: `confirm_no`, title: '✏️ I\'ll retype' }],
     );
     return;
   }
 
   try {
     const link = await getUserByPhone(msg.from);
-    console.log(`[save] phone=${msg.from} link=${link ? `workspace ${link.workspace_id}` : 'NOT FOUND'}`);
-    if (!link) {
-      await sendWhatsAppMessage(msg.from, `Your number isn't linked to an Autonance account yet. Open the app and connect WhatsApp from Settings.`);
-      return;
-    }
+    if (!link) { await notLinked(msg.from); return; }
 
     await insertTransaction(link.workspace_id, link.user_id, parsed, rawForRecord);
-    console.log(`[save] saved ${parsed.currency} ${parsed.amount} ${parsed.category} for workspace ${link.workspace_id}`);
-    await sendWhatsAppMessage(msg.from, formatConfirmation(parsed.amount, parsed.currency, parsed.type, parsed.category, parsed.date, parsed.payee));
+    const confirmText = formatConfirmation(parsed.amount, parsed.currency, parsed.type, parsed.category, parsed.date, parsed.payee);
+    await sendInteractiveButtons(
+      msg.from, confirmText,
+      [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
+    );
   } catch (err) {
     console.error('[save] DB error:', err);
     await sendWhatsAppMessage(msg.from, `Saved to memory, but had trouble storing it. Please try again.`);
   }
 }
 
-async function handleSummaryRequest(msg: WhatsAppMessage): Promise<void> {
-  try {
-    const link = await getUserByPhone(msg.from);
-    if (!link) {
-      await sendWhatsAppMessage(msg.from, `Your number isn't linked to an Autonance account yet. Open the app and connect WhatsApp from Settings.`);
-      return;
-    }
-
-    const now = new Date();
-    const summary = await getMonthlySummary(link.workspace_id, now.getFullYear(), now.getMonth() + 1);
-    await sendWhatsAppMessage(msg.from, formatSummary(summary.totalIncome, summary.totalExpense, summary.byCategory));
-  } catch (err) {
-    console.error('[handleSummaryRequest] error:', err);
-    await sendWhatsAppMessage(msg.from, `Couldn't fetch your summary right now. Try again in a moment.`);
-  }
-}
-
-function helpText(): string {
-  return `👋 *Autonance* — track money by chatting!\n\n*Log an expense:*\n• Spent 500 on lunch\n• Paid 2000 for electricity\n• Bought groceries 350 at DMart\n\n*Log income:*\n• Received 50000 salary\n• Got paid 5000 from client\n\n*Snap a receipt:*\n• 📸 Send a photo of a receipt, bill, or a PhonePe/GPay screenshot — we'll read it automatically.\n\n*Get a summary:*\n• Summary\n• How much did I spend this month?\n\nTransactions sync to your Autonance app instantly.`;
+// ── Helpers ───────────────────────────────────────────────────────────────────
+async function notLinked(to: string) {
+  await sendWhatsAppMessage(to, `Your number isn't linked to an Autonance account yet. Open the app and connect WhatsApp from Settings.`);
 }

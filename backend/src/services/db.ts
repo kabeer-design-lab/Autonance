@@ -49,10 +49,7 @@ export async function insertTransaction(
   return data;
 }
 
-export async function getMonthlySummary(workspaceId: string, year: number, month: number) {
-  const from = `${year}-${String(month).padStart(2, '0')}-01`;
-  const to = `${year}-${String(month).padStart(2, '0')}-31`;
-
+async function querySummary(workspaceId: string, from: string, to: string) {
   const { data, error } = await supabase
     .from('transactions')
     .select('type, amount, category')
@@ -63,7 +60,7 @@ export async function getMonthlySummary(workspaceId: string, year: number, month
   if (error) throw new Error(`DB query failed: ${error.message}`);
 
   const rows = data || [];
-  const totalIncome = rows.filter(r => r.type === 'income').reduce((s, r) => s + Number(r.amount), 0);
+  const totalIncome  = rows.filter(r => r.type === 'income').reduce((s, r) => s + Number(r.amount), 0);
   const totalExpense = rows.filter(r => r.type === 'expense').reduce((s, r) => s + Number(r.amount), 0);
 
   const byCategory: Record<string, number> = {};
@@ -72,4 +69,25 @@ export async function getMonthlySummary(workspaceId: string, year: number, month
   });
 
   return { totalIncome, totalExpense, byCategory, transactionCount: rows.length };
+}
+
+export async function getMonthlySummary(workspaceId: string, year: number, month: number) {
+  const from = `${year}-${String(month).padStart(2, '0')}-01`;
+  const to   = `${year}-${String(month).padStart(2, '0')}-31`;
+  return querySummary(workspaceId, from, to);
+}
+
+export async function getTodaySummary(workspaceId: string) {
+  const today = new Date().toISOString().slice(0, 10);
+  return querySummary(workspaceId, today, today);
+}
+
+export async function getWeeklySummary(workspaceId: string) {
+  const now  = new Date();
+  const from = new Date(now); from.setDate(now.getDate() - 6);
+  return querySummary(workspaceId, from.toISOString().slice(0, 10), now.toISOString().slice(0, 10));
+}
+
+export async function getAllTimeSummary(workspaceId: string) {
+  return querySummary(workspaceId, '2000-01-01', '2099-12-31');
 }

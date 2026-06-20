@@ -58,6 +58,18 @@ router.post('/', (req: Request, res: Response) => {
             kind: 'image',
             mediaId: message.image?.id,
           };
+        } else if (message.type === 'interactive') {
+          const btnReply  = message.interactive?.button_reply;
+          const listReply = message.interactive?.list_reply;
+          const reply = btnReply ?? listReply;
+          if (!reply) continue;
+          msg = {
+            from: message.from,
+            text: reply.title || '',
+            messageId: message.id,
+            kind: 'interactive',
+            buttonId: reply.id,
+          };
         } else {
           continue; // unsupported type (audio, sticker, etc.)
         }

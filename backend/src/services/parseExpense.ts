@@ -102,3 +102,27 @@ export async function parseReceiptImage(base64: string, mimeType: string): Promi
 }
 
 export const LOW_CONFIDENCE_THRESHOLD = 0.65;
+
+/** Generate a short AI insight sentence from monthly stats. */
+export async function generateInsight(
+  totalIncome: number,
+  totalExpense: number,
+  byCategory: Record<string, number>,
+): Promise<string> {
+  const net     = totalIncome - totalExpense;
+  const topCats = Object.entries(byCategory)
+    .sort(([,a],[,b]) => b - a)
+    .slice(0, 3)
+    .map(([cat, amt]) => `${cat} ₹${amt.toLocaleString('en-IN')}`)
+    .join(', ');
+
+  const prompt = `You are a friendly personal finance assistant. In exactly ONE short sentence (max 15 words), give a helpful and encouraging insight based on these numbers: Income ₹${totalIncome.toLocaleString('en-IN')}, Expenses ₹${totalExpense.toLocaleString('en-IN')}, Net ₹${net.toLocaleString('en-IN')}, Top categories: ${topCats || 'none'}. Be specific, positive, and actionable.`;
+
+  const response = await client.chat.completions.create({
+    model: TEXT_MODEL,
+    max_tokens: 60,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  return response.choices[0]?.message?.content?.trim().replace(/^["']|["']$/g, '') ?? '';
+}

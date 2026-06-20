@@ -32,6 +32,7 @@ export interface WhatsAppMessage {
   from: string;           // sender's phone number
   text: string;           // body text, or image caption (may be empty)
   messageId: string;
-  kind: 'text' | 'image'; // what the user actually sent
+  kind: 'text' | 'image' | 'interactive';
   mediaId?: string;       // present when kind === 'image'
+  buttonId?: string;      // present when kind === 'interactive'
 }
