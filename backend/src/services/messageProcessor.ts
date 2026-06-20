@@ -10,6 +10,32 @@ import {
 } from './whatsapp';
 import { WhatsAppMessage, ParsedTransaction } from '../types';
 
+// ── Guardrail 1: Duplicate message dedup ─────────────────────────────────────
+// WhatsApp Cloud API can deliver the same webhook twice within seconds.
+// We keep a Set of recently-seen messageIds and ignore repeats.
+const SEEN_IDS = new Map<string, number>(); // messageId → timestamp
+const DEDUP_TTL_MS = 2 * 60 * 1000; // 2 minutes
+
+function isDuplicate(messageId: string): boolean {
+  const now = Date.now();
+  // Evict entries older than TTL to avoid memory leak
+  for (const [id, ts] of SEEN_IDS) {
+    if (now - ts > DEDUP_TTL_MS) SEEN_IDS.delete(id);
+  }
+  if (SEEN_IDS.has(messageId)) return true;
+  SEEN_IDS.set(messageId, now);
+  return false;
+}
+
+// ── Guardrail 2: Amount sanity ────────────────────────────────────────────────
+const MAX_SANE_AMOUNT = 10_000_000; // ₹1 crore — anything above is almost certainly a parse error
+
+function amountSanityCheck(amount: number): 'ok' | 'zero' | 'too_large' {
+  if (amount <= 0)              return 'zero';
+  if (amount > MAX_SANE_AMOUNT) return 'too_large';
+  return 'ok';
+}
+
 // ── Button IDs ────────────────────────────────────────────────────────────────
 const BTN_TODAY   = 'today';
 const BTN_MONTH   = 'month';
@@ -27,6 +53,12 @@ const RE_TRANSACTION = /[\d,]+(\.\d+)?|₹|\$|£|€|inr|usd|eur|spent|paid|rece
 
 // ── Main entry ────────────────────────────────────────────────────────────────
 export async function processMessage(msg: WhatsAppMessage): Promise<void> {
+  // Guardrail 1: drop duplicate webhook deliveries silently
+  if (isDuplicate(msg.messageId)) {
+    console.log(`[dedup] ignoring duplicate messageId=${msg.messageId}`);
+    return;
+  }
+
   if (msg.kind === 'image') { await handleImage(msg); return; }
 
   // Button / list tap — route by ID first (most specific)
@@ -182,6 +214,17 @@ async function handleImage(msg: WhatsAppMessage): Promise<void> {
 async function saveParsedTransaction(
   msg: WhatsAppMessage, parsed: ParsedTransaction, rawForRecord: string,
 ): Promise<void> {
+  // Guardrail 2: amount sanity check
+  const amountStatus = amountSanityCheck(parsed.amount);
+  if (amountStatus !== 'ok') {
+    const reason = amountStatus === 'zero'
+      ? `I couldn't find a valid amount in that message.`
+      : `That amount (₹${parsed.amount.toLocaleString('en-IN')}) looks unusually large — I want to make sure I read it right.`;
+    await sendWhatsAppMessage(msg.from, `⚠️ ${reason}\n\nCould you resend it? Example: "Spent 500 on lunch" or "Received 50000 salary".`);
+    return;
+  }
+
+  // Guardrail: low AI confidence → ask user to confirm before saving
   if (parsed.confidence < LOW_CONFIDENCE_THRESHOLD) {
     await sendInteractiveButtons(
       msg.from,
