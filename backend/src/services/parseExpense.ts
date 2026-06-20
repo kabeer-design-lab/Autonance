@@ -103,6 +103,57 @@ export async function parseReceiptImage(base64: string, mimeType: string): Promi
 
 export const LOW_CONFIDENCE_THRESHOLD = 0.65;
 
+export type MessageIntent =
+  | 'TRANSACTION'
+  | 'TODAY_REPORT'
+  | 'WEEK_REPORT'
+  | 'MONTH_REPORT'
+  | 'BALANCE'
+  | 'TOP_SPENDING'
+  | 'TOP_INCOME'
+  | 'HELP'
+  | 'UNKNOWN';
+
+const VALID_INTENTS: MessageIntent[] = [
+  'TRANSACTION', 'TODAY_REPORT', 'WEEK_REPORT', 'MONTH_REPORT',
+  'BALANCE', 'TOP_SPENDING', 'TOP_INCOME', 'HELP', 'UNKNOWN',
+];
+
+/**
+ * Classify the user's message into a structured intent.
+ * Returns in ~200ms using a tiny max_tokens budget.
+ */
+export async function classifyIntent(message: string): Promise<MessageIntent> {
+  const prompt = `You are classifying a WhatsApp message sent to a personal finance bot.
+Return ONLY one intent name from this list — no explanation, no punctuation:
+
+TRANSACTION   — user is logging money (spending, income, transfer). Must contain a specific amount.
+TODAY_REPORT  — user wants today's spending or income snapshot
+WEEK_REPORT   — user wants this week's or last 7 days summary
+MONTH_REPORT  — user wants this month's summary or how much they spent/earned overall
+BALANCE       — user wants their net balance, total savings, or overall financial position
+TOP_SPENDING  — user asks where they spent most, which expense category is highest, spending breakdown
+TOP_INCOME    — user asks where their income came from, income sources, who paid them most
+HELP          — greeting, asking what the bot can do, or unclear intent
+UNKNOWN       — none of the above
+
+Message: "${message.replace(/"/g, "'")}"
+
+Intent:`;
+
+  try {
+    const response = await client.chat.completions.create({
+      model: TEXT_MODEL,
+      max_tokens: 8,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const raw = (response.choices[0]?.message?.content ?? '').trim().toUpperCase();
+    return VALID_INTENTS.find(i => raw.includes(i)) ?? 'UNKNOWN';
+  } catch {
+    return 'UNKNOWN';
+  }
+}
+
 /** Generate a short AI insight sentence from monthly stats. */
 export async function generateInsight(
   totalIncome: number,

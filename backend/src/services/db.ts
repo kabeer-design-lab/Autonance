@@ -91,3 +91,27 @@ export async function getWeeklySummary(workspaceId: string) {
 export async function getAllTimeSummary(workspaceId: string) {
   return querySummary(workspaceId, '2000-01-01', '2099-12-31');
 }
+
+export async function getIncomeSources(workspaceId: string, from: string, to: string) {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('amount, category, payee')
+    .eq('workspace_id', workspaceId)
+    .eq('type', 'income')
+    .gte('occurred_at', from)
+    .lte('occurred_at', to);
+
+  if (error) throw new Error(`DB query failed: ${error.message}`);
+
+  const rows = data || [];
+  const total = rows.reduce((s, r) => s + Number(r.amount), 0);
+
+  const byCategory: Record<string, number> = {};
+  const byPayee: Record<string, number> = {};
+  rows.forEach(r => {
+    byCategory[r.category] = (byCategory[r.category] || 0) + Number(r.amount);
+    if (r.payee) byPayee[r.payee] = (byPayee[r.payee] || 0) + Number(r.amount);
+  });
+
+  return { total, byCategory, byPayee, count: rows.length };
+}

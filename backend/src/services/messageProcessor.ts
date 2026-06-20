@@ -1,7 +1,7 @@
-import { parseExpense, parseReceiptImage, generateInsight, LOW_CONFIDENCE_THRESHOLD } from './parseExpense';
+import { parseExpense, parseReceiptImage, generateInsight, classifyIntent, LOW_CONFIDENCE_THRESHOLD } from './parseExpense';
 import {
   insertTransaction, getMonthlySummary, getTodaySummary,
-  getWeeklySummary, getAllTimeSummary, getUserByPhone,
+  getWeeklySummary, getAllTimeSummary, getIncomeSources, getUserByPhone,
 } from './db';
 import {
   sendWhatsAppMessage, sendInteractiveButtons, sendListMessage,
@@ -43,15 +43,10 @@ const BTN_MORE    = 'more';
 const BTN_WEEK    = 'week';
 const BTN_BALANCE = 'balance';
 
-// ── Regex routing ─────────────────────────────────────────────────────────────
-const RE_HELP         = /\b(help|hi|hello|start|hey|menu|commands)\b/i;
-const RE_TODAY        = /\b(today|today'?s?)\b/i;
-const RE_WEEK         = /\b(week|this week|7 days|last 7)\b/i;
-const RE_MONTH        = /\b(month|this month|monthly|summary|report|how much)\b/i;
-const RE_BALANCE      = /\b(balance|net|total|overview|left)\b/i;
-// "Where have I spent" / "which category" / "most money on" / "top spending"
-const RE_TOP_SPENDING = /\b(where|which|most|top|categor|breakdown|biggest|highest|max)\b.*(spent|spend|money|expense|cost)/i;
-const RE_TRANSACTION  = /[\d,]+(\.\d+)?|₹|\$|£|€|inr|usd|eur|spent|paid|received|salary|bought|purchased|income|expense/i;
+// Fast pre-check: if the message has a number + money keyword it's almost certainly a transaction.
+// We skip AI classification for this case to keep response time fast.
+const RE_HAS_AMOUNT      = /[\d,]+(\.\d+)?|₹|\$|£|€/;
+const RE_MONEY_KEYWORD   = /\b(spent|paid|received|salary|bought|purchased|income|expense|transfer)\b/i;
 
 // ── Main entry ────────────────────────────────────────────────────────────────
 export async function processMessage(msg: WhatsAppMessage): Promise<void> {
@@ -69,22 +64,35 @@ export async function processMessage(msg: WhatsAppMessage): Promise<void> {
     return;
   }
 
-  const text  = msg.text.trim();
-  const lower = text.toLowerCase();
+  const text = msg.text.trim();
+  if (!text) { await handleWelcome(msg); return; }
 
-  if (RE_HELP.test(lower) && !RE_TRANSACTION.test(text)) { await handleWelcome(msg); return; }
-  if (RE_TOP_SPENDING.test(lower))                        { await handleTopSpending(msg); return; }
-  if (RE_TODAY.test(lower) && !RE_TRANSACTION.test(text)) { await handleTodayReport(msg); return; }
-  if (RE_WEEK.test(lower) && !RE_TRANSACTION.test(text))  { await handleWeeklyReport(msg); return; }
-  if (RE_BALANCE.test(lower) && !RE_TRANSACTION.test(text)) { await handleBalance(msg); return; }
-  if (RE_MONTH.test(lower) && !RE_TRANSACTION.test(text)) { await handleMonthlyReport(msg); return; }
-  if (RE_TRANSACTION.test(text)) { await handleTransaction(msg); return; }
+  // Fast path: has a number + money verb → treat as transaction immediately, no AI needed
+  if (RE_HAS_AMOUNT.test(text) && RE_MONEY_KEYWORD.test(text)) {
+    await handleTransaction(msg);
+    return;
+  }
 
-  await sendInteractiveButtons(
-    msg.from,
-    "I didn't quite get that. What would you like to do?",
-    [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
-  );
+  // AI intent classification — understands any phrasing the user throws at it
+  const intent = await classifyIntent(text);
+  console.log(`[intent] "${text}" → ${intent}`);
+
+  switch (intent) {
+    case 'TRANSACTION':   await handleTransaction(msg);    break;
+    case 'TODAY_REPORT':  await handleTodayReport(msg);    break;
+    case 'WEEK_REPORT':   await handleWeeklyReport(msg);   break;
+    case 'MONTH_REPORT':  await handleMonthlyReport(msg);  break;
+    case 'BALANCE':       await handleBalance(msg);        break;
+    case 'TOP_SPENDING':  await handleTopSpending(msg);    break;
+    case 'TOP_INCOME':    await handleTopIncome(msg);      break;
+    case 'HELP':          await handleWelcome(msg);        break;
+    default:
+      await sendInteractiveButtons(
+        msg.from,
+        "I didn't quite get that. What would you like to do?",
+        [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
+      );
+  }
 }
 
 // ── Button dispatcher ─────────────────────────────────────────────────────────
@@ -235,6 +243,66 @@ async function handleTopSpending(msg: WhatsAppMessage): Promise<void> {
   await sendInteractiveButtons(
     msg.from, body,
     [{ id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_WEEK, title: '📆 This Week' }, { id: BTN_BALANCE, title: '💰 Balance' }],
+  );
+}
+
+// ── Top income sources ────────────────────────────────────────────────────────
+async function handleTopIncome(msg: WhatsAppMessage): Promise<void> {
+  const link = await getUserByPhone(msg.from);
+  if (!link) { await notLinked(msg.from); return; }
+
+  const lower = msg.text.toLowerCase();
+  let from: string, to: string, periodLabel: string;
+
+  if (/week|7 days/.test(lower)) {
+    const now = new Date(); const start = new Date(now); start.setDate(now.getDate() - 6);
+    from = start.toISOString().slice(0, 10); to = now.toISOString().slice(0, 10);
+    periodLabel = 'last 7 days';
+  } else if (/today/.test(lower)) {
+    from = to = new Date().toISOString().slice(0, 10);
+    periodLabel = 'today';
+  } else {
+    const now = new Date();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    from = `${now.getFullYear()}-${m}-01`; to = `${now.getFullYear()}-${m}-31`;
+    periodLabel = now.toLocaleDateString('en-IN', { month: 'long' });
+  }
+
+  const { total, byCategory, byPayee } = await getIncomeSources(link.workspace_id, from, to);
+
+  if (total === 0) {
+    await sendInteractiveButtons(
+      msg.from,
+      `No income recorded for ${periodLabel} yet.\n\nLog income by sending: "Received 50000 salary"`,
+      [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
+    );
+    return;
+  }
+
+  const rankedPayees = Object.entries(byPayee).sort(([, a], [, b]) => b - a).slice(0, 4);
+  const rankedCats   = Object.entries(byCategory).sort(([, a], [, b]) => b - a).slice(0, 4);
+
+  const payeeLines = rankedPayees.length > 0
+    ? rankedPayees.map(([p, amt], i) => {
+        const pct = Math.round((amt / total) * 100);
+        return `${i + 1}. *${p}* — ₹${amt.toLocaleString('en-IN')} (${pct}%)`;
+      }).join('\n')
+    : null;
+
+  const catLines = rankedCats.map(([c, amt], i) => {
+    const pct = Math.round((amt / total) * 100);
+    return `${i + 1}. *${c}* — ₹${amt.toLocaleString('en-IN')} (${pct}%)`;
+  }).join('\n');
+
+  const sourcesSection = payeeLines
+    ? `*By source:*\n${payeeLines}\n\n*By type:*\n${catLines}`
+    : `*By type:*\n${catLines}`;
+
+  const body = `📈 *Where your income comes from — ${periodLabel}*\n\n💰 Total received: ₹${total.toLocaleString('en-IN')}\n\n${sourcesSection}`;
+
+  await sendInteractiveButtons(
+    msg.from, body,
+    [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_BALANCE, title: '💰 Balance' }],
   );
 }
 
