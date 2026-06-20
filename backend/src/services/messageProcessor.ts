@@ -77,7 +77,11 @@ export async function processMessage(msg: WhatsAppMessage): Promise<void> {
   const intent = await classifyIntent(text);
   console.log(`[intent] "${text}" → ${intent}`);
 
-  switch (intent) {
+  // Safety guard: if AI says TRANSACTION but there's no number in the message,
+  // it's a misclassification — treat as UNKNOWN so we show the help menu.
+  const safeIntent = (intent === 'TRANSACTION' && !RE_HAS_AMOUNT.test(text)) ? 'UNKNOWN' : intent;
+
+  switch (safeIntent) {
     case 'TRANSACTION':   await handleTransaction(msg);    break;
     case 'TODAY_REPORT':  await handleTodayReport(msg);    break;
     case 'WEEK_REPORT':   await handleWeeklyReport(msg);   break;
