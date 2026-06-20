@@ -44,12 +44,14 @@ const BTN_WEEK    = 'week';
 const BTN_BALANCE = 'balance';
 
 // ── Regex routing ─────────────────────────────────────────────────────────────
-const RE_HELP        = /\b(help|hi|hello|start|hey|menu|commands)\b/i;
-const RE_TODAY       = /\b(today|today'?s?)\b/i;
-const RE_WEEK        = /\b(week|this week|7 days|last 7)\b/i;
-const RE_MONTH       = /\b(month|this month|monthly|summary|report|spending|spent|expenses?|how much)\b/i;
-const RE_BALANCE     = /\b(balance|net|total|overview|left)\b/i;
-const RE_TRANSACTION = /[\d,]+(\.\d+)?|₹|\$|£|€|inr|usd|eur|spent|paid|received|salary|bought|purchased|income|expense/i;
+const RE_HELP         = /\b(help|hi|hello|start|hey|menu|commands)\b/i;
+const RE_TODAY        = /\b(today|today'?s?)\b/i;
+const RE_WEEK         = /\b(week|this week|7 days|last 7)\b/i;
+const RE_MONTH        = /\b(month|this month|monthly|summary|report|how much)\b/i;
+const RE_BALANCE      = /\b(balance|net|total|overview|left)\b/i;
+// "Where have I spent" / "which category" / "most money on" / "top spending"
+const RE_TOP_SPENDING = /\b(where|which|most|top|categor|breakdown|biggest|highest|max)\b.*(spent|spend|money|expense|cost)/i;
+const RE_TRANSACTION  = /[\d,]+(\.\d+)?|₹|\$|£|€|inr|usd|eur|spent|paid|received|salary|bought|purchased|income|expense/i;
 
 // ── Main entry ────────────────────────────────────────────────────────────────
 export async function processMessage(msg: WhatsAppMessage): Promise<void> {
@@ -71,6 +73,7 @@ export async function processMessage(msg: WhatsAppMessage): Promise<void> {
   const lower = text.toLowerCase();
 
   if (RE_HELP.test(lower) && !RE_TRANSACTION.test(text)) { await handleWelcome(msg); return; }
+  if (RE_TOP_SPENDING.test(lower))                        { await handleTopSpending(msg); return; }
   if (RE_TODAY.test(lower) && !RE_TRANSACTION.test(text)) { await handleTodayReport(msg); return; }
   if (RE_WEEK.test(lower) && !RE_TRANSACTION.test(text))  { await handleWeeklyReport(msg); return; }
   if (RE_BALANCE.test(lower) && !RE_TRANSACTION.test(text)) { await handleBalance(msg); return; }
@@ -176,6 +179,62 @@ async function handleBalance(msg: WhatsAppMessage): Promise<void> {
   await sendInteractiveButtons(
     msg.from, body,
     [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
+  );
+}
+
+// ── Top spending breakdown ────────────────────────────────────────────────────
+async function handleTopSpending(msg: WhatsAppMessage): Promise<void> {
+  const link = await getUserByPhone(msg.from);
+  if (!link) { await notLinked(msg.from); return; }
+
+  const lower = msg.text.toLowerCase();
+  let summary: Awaited<ReturnType<typeof getMonthlySummary>>;
+  let periodLabel: string;
+
+  if (/week|7 days/.test(lower)) {
+    summary = await getWeeklySummary(link.workspace_id);
+    periodLabel = 'last 7 days';
+  } else if (/today/.test(lower)) {
+    summary = await getTodaySummary(link.workspace_id);
+    periodLabel = 'today';
+  } else if (/all.?time|ever|overall|always/.test(lower)) {
+    summary = await getAllTimeSummary(link.workspace_id);
+    periodLabel = 'all time';
+  } else {
+    const now = new Date();
+    summary = await getMonthlySummary(link.workspace_id, now.getFullYear(), now.getMonth() + 1);
+    periodLabel = new Date().toLocaleDateString('en-IN', { month: 'long' });
+  }
+
+  const { byCategory, totalExpense } = summary;
+  const ranked = Object.entries(byCategory).sort(([, a], [, b]) => b - a);
+
+  if (ranked.length === 0) {
+    await sendInteractiveButtons(
+      msg.from,
+      `No expenses recorded for ${periodLabel} yet. Start by sending a message like "Spent 500 on lunch".`,
+      [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
+    );
+    return;
+  }
+
+  const [topCat, topAmt] = ranked[0];
+  const topPct = totalExpense > 0 ? Math.round((topAmt / totalExpense) * 100) : 0;
+
+  const lines = ranked
+    .slice(0, 6)
+    .map(([cat, amt], i) => {
+      const pct  = totalExpense > 0 ? Math.round((amt / totalExpense) * 100) : 0;
+      const bar  = '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10));
+      return `${i + 1}. *${cat}* — ₹${amt.toLocaleString('en-IN')} (${pct}%)\n   ${bar}`;
+    })
+    .join('\n\n');
+
+  const body = `🔍 *Where you spend most — ${periodLabel}*\n\n${lines}\n\n💡 *${topCat}* takes up ${topPct}% of your spending.`;
+
+  await sendInteractiveButtons(
+    msg.from, body,
+    [{ id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_WEEK, title: '📆 This Week' }, { id: BTN_BALANCE, title: '💰 Balance' }],
   );
 }
 
