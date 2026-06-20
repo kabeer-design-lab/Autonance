@@ -6,9 +6,17 @@ const client = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
-const TEXT_MODEL      = 'deepseek/deepseek-chat-v3-0324:free';   // best free text model
-const VISION_MODEL    = 'google/gemini-2.0-flash-exp:free';        // best free vision model
-const VISION_FALLBACK = 'qwen/qwen2.5-vl-72b-instruct:free';       // vision fallback
+// Model chain: primary → fallback. If primary is rate-limited, fallback kicks in.
+const TEXT_MODELS   = [
+  'google/gemini-2.0-flash-exp:free',          // primary: reliable, fast
+  'deepseek/deepseek-chat-v3-0324:free',        // fallback 1
+  'meta-llama/llama-3.3-70b-instruct:free',     // fallback 2
+];
+const VISION_MODELS = [
+  'google/gemini-2.0-flash-exp:free',           // primary: supports vision + text
+  'qwen/qwen2.5-vl-72b-instruct:free',          // fallback 1
+  'meta-llama/llama-3.2-11b-vision-instruct:free', // fallback 2
+];
 
 const today = () => new Date().toISOString().split('T')[0];
 
@@ -55,25 +63,34 @@ function coerce(raw: string): ParsedTransaction {
 }
 
 export async function parseExpense(message: string): Promise<ParsedTransaction> {
-  const response = await client.chat.completions.create({
-    model: TEXT_MODEL,
-    max_tokens: 256,
-    messages: [
-      { role: 'system', content: TEXT_PROMPT },
-      { role: 'user', content: message },
-    ],
-  });
-
-  const raw = response.choices[0]?.message?.content?.trim() ?? '';
-  return coerce(raw);
+  let lastErr: unknown;
+  for (const model of TEXT_MODELS) {
+    try {
+      console.log(`[parseExpense] trying model: ${model}`);
+      const response = await client.chat.completions.create({
+        model,
+        max_tokens: 256,
+        messages: [
+          { role: 'system', content: TEXT_PROMPT },
+          { role: 'user', content: message },
+        ],
+      });
+      const raw = response.choices[0]?.message?.content?.trim() ?? '';
+      return coerce(raw);
+    } catch (err) {
+      console.error(`[parseExpense] ${model} failed:`, err);
+      lastErr = err;
+    }
+  }
+  throw lastErr;
 }
 
 /** Parse a receipt / payment screenshot / invoice image into a transaction. */
 export async function parseReceiptImage(base64: string, mimeType: string): Promise<ParsedTransaction> {
   const dataUri = `data:${mimeType};base64,${base64}`;
-  const models = [VISION_MODEL, VISION_FALLBACK];
+  let lastErr: unknown;
 
-  for (const model of models) {
+  for (const model of VISION_MODELS) {
     try {
       console.log(`[parseReceiptImage] trying model: ${model}`);
       const response = await client.chat.completions.create({
@@ -89,16 +106,15 @@ export async function parseReceiptImage(base64: string, mimeType: string): Promi
           },
         ],
       });
-
       const raw = response.choices[0]?.message?.content?.trim() ?? '';
       return coerce(raw);
     } catch (err) {
       console.error(`[parseReceiptImage] ${model} failed:`, err);
-      if (model === models[models.length - 1]) throw err;
+      lastErr = err;
     }
   }
 
-  throw new Error('All vision models failed');
+  throw lastErr ?? new Error('All vision models failed');
 }
 
 export const LOW_CONFIDENCE_THRESHOLD = 0.65;
@@ -143,7 +159,7 @@ Intent:`;
 
   try {
     const response = await client.chat.completions.create({
-      model: TEXT_MODEL,
+      model: TEXT_MODELS[0],
       max_tokens: 8,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -169,11 +185,15 @@ export async function generateInsight(
 
   const prompt = `You are a friendly personal finance assistant. In exactly ONE short sentence (max 15 words), give a helpful and encouraging insight based on these numbers: Income ₹${totalIncome.toLocaleString('en-IN')}, Expenses ₹${totalExpense.toLocaleString('en-IN')}, Net ₹${net.toLocaleString('en-IN')}, Top categories: ${topCats || 'none'}. Be specific, positive, and actionable.`;
 
-  const response = await client.chat.completions.create({
-    model: TEXT_MODEL,
-    max_tokens: 60,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  return response.choices[0]?.message?.content?.trim().replace(/^["']|["']$/g, '') ?? '';
+  for (const model of TEXT_MODELS) {
+    try {
+      const response = await client.chat.completions.create({
+        model,
+        max_tokens: 60,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      return response.choices[0]?.message?.content?.trim().replace(/^["']|["']$/g, '') ?? '';
+    } catch { /* try next */ }
+  }
+  return '';
 }
