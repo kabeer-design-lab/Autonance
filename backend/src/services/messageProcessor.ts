@@ -1,4 +1,4 @@
-import { parseExpense, parseReceiptImage, generateInsight, classifyIntent, LOW_CONFIDENCE_THRESHOLD } from './parseExpense';
+import { parseExpense, parseReceiptImage, generateInsight, LOW_CONFIDENCE_THRESHOLD } from './parseExpense';
 import {
   insertTransaction, getMonthlySummary, getTodaySummary,
   getWeeklySummary, getAllTimeSummary, getIncomeSources, getUserByPhone,
@@ -43,10 +43,42 @@ const BTN_MORE    = 'more';
 const BTN_WEEK    = 'week';
 const BTN_BALANCE = 'balance';
 
-// Fast pre-check: if the message has a number + money keyword it's almost certainly a transaction.
-// We skip AI classification for this case to keep response time fast.
-const RE_HAS_AMOUNT      = /[\d,]+(\.\d+)?|₹|\$|£|€/;
-const RE_MONEY_KEYWORD   = /\b(spent|paid|received|salary|bought|purchased|income|expense|transfer)\b/i;
+const RE_HAS_AMOUNT    = /[\d,]+(\.\d+)?|₹|\$|£|€/;
+const RE_MONEY_KEYWORD = /\b(spent|paid|received|salary|bought|purchased|income|expense|transfer)\b/i;
+
+// ── Deterministic intent detection ───────────────────────────────────────────
+// Checked in priority order. No AI needed — instant, no rate limits.
+function detectIntent(text: string): string {
+  const t = text.toLowerCase().trim();
+
+  // Greetings / help
+  if (/^(hi|hello|hey|help|menu|start|commands)[\s?!.]*$/.test(t)) return 'HELP';
+
+  // Income analysis — "most income from", "where did salary come", "which source paid most"
+  if (
+    /\b(income|earn(ed)?|receiv(ed)?|got paid|salary|credit(ed)?)\b/.test(t) &&
+    /\b(where|which|most|source|from|top|highest|breakdown|more)\b/.test(t)
+  ) return 'TOP_INCOME';
+
+  // Spending analysis — "where spent", "which category", "most money on"
+  if (
+    /\b(where|which|most|top|highest|biggest|max(imum)?|more)\b/.test(t) &&
+    /\b(spent|spend(ing)?|expens(e|es)|money|paid|cost|bought)\b/.test(t)
+  ) return 'TOP_SPENDING';
+
+  // Time-period reports (only when no specific amount present)
+  if (!RE_HAS_AMOUNT.test(text)) {
+    if (/\btoday\b/.test(t))                                                   return 'TODAY';
+    if (/\b(this week|last week|7 days|weekly|week)\b/.test(t))                return 'WEEK';
+    if (/\b(balance|net worth|left|remaining|saved|overall|position)\b/.test(t)) return 'BALANCE';
+    if (/\b(this month|monthly|month|summary|report|how much|spending|expenses?)\b/.test(t)) return 'MONTH';
+  }
+
+  // Transaction — has a number + money action word
+  if (RE_HAS_AMOUNT.test(text) && RE_MONEY_KEYWORD.test(text)) return 'TRANSACTION';
+
+  return 'UNKNOWN';
+}
 
 // ── Main entry ────────────────────────────────────────────────────────────────
 export async function processMessage(msg: WhatsAppMessage): Promise<void> {
@@ -67,29 +99,18 @@ export async function processMessage(msg: WhatsAppMessage): Promise<void> {
   const text = msg.text.trim();
   if (!text) { await handleWelcome(msg); return; }
 
-  // Fast path: has a number + money verb → treat as transaction immediately, no AI needed
-  if (RE_HAS_AMOUNT.test(text) && RE_MONEY_KEYWORD.test(text)) {
-    await handleTransaction(msg);
-    return;
-  }
-
-  // AI intent classification — understands any phrasing the user throws at it
-  const intent = await classifyIntent(text);
+  const intent = detectIntent(text);
   console.log(`[intent] "${text}" → ${intent}`);
 
-  // Safety guard: if AI says TRANSACTION but there's no number in the message,
-  // it's a misclassification — treat as UNKNOWN so we show the help menu.
-  const safeIntent = (intent === 'TRANSACTION' && !RE_HAS_AMOUNT.test(text)) ? 'UNKNOWN' : intent;
-
-  switch (safeIntent) {
-    case 'TRANSACTION':   await handleTransaction(msg);    break;
-    case 'TODAY_REPORT':  await handleTodayReport(msg);    break;
-    case 'WEEK_REPORT':   await handleWeeklyReport(msg);   break;
-    case 'MONTH_REPORT':  await handleMonthlyReport(msg);  break;
-    case 'BALANCE':       await handleBalance(msg);        break;
-    case 'TOP_SPENDING':  await handleTopSpending(msg);    break;
-    case 'TOP_INCOME':    await handleTopIncome(msg);      break;
-    case 'HELP':          await handleWelcome(msg);        break;
+  switch (intent) {
+    case 'HELP':        await handleWelcome(msg);        break;
+    case 'TOP_INCOME':  await handleTopIncome(msg);      break;
+    case 'TOP_SPENDING':await handleTopSpending(msg);    break;
+    case 'TODAY':       await handleTodayReport(msg);    break;
+    case 'WEEK':        await handleWeeklyReport(msg);   break;
+    case 'BALANCE':     await handleBalance(msg);        break;
+    case 'MONTH':       await handleMonthlyReport(msg);  break;
+    case 'TRANSACTION': await handleTransaction(msg);    break;
     default:
       await sendInteractiveButtons(
         msg.from,
