@@ -44,6 +44,63 @@ const VISION_PROMPT = `You are a financial assistant. The image is a receipt, pa
 - A payment app screenshot is usually an "expense" unless it clearly says received/credited.
 ${SCHEMA}`;
 
+// ── Rule-based fallback parser ───────────────────────────────────────────────
+// Used when ALL AI models fail. Handles common patterns deterministically.
+
+const CATEGORY_RULES: [RegExp, Category][] = [
+  [/\b(food|lunch|dinner|breakfast|meal|restaurant|cafe|zomato|swiggy|snack|pizza|biryani|burger|hotel|dhaba)\b/i, 'Food'],
+  [/\b(grocery|groceries|vegetable|fruit|supermarket|dmart|bigbasket|blinkit|zepto|kirana|market)\b/i, 'Food'],
+  [/\b(coffee|tea|chai|latte|cappuccino|starbucks)\b/i, 'Food'],
+  [/\b(uber|ola|auto|cab|taxi|bus|metro|train|petrol|diesel|fuel|toll|parking|ride)\b/i, 'Transport'],
+  [/\b(flight|hotel|airbnb|trip|travel|vacation|tour|makemytrip|goibibo)\b/i, 'Transport'],
+  [/\b(amazon|flipkart|shopping|mall|shop|store|purchase|buy|bought|meesho|myntra|ajio)\b/i, 'Shopping'],
+  [/\b(shirt|tshirt|dress|jeans|clothes|shoes|clothing|wear|apparel)\b/i, 'Shopping'],
+  [/\b(laptop|phone|mobile|charger|headphone|gadget|electronics|earphone|tablet)\b/i, 'Shopping'],
+  [/\b(rent|electricity|water|gas|wifi|internet|broadband|bill|recharge|dth|emi|insurance)\b/i, 'Bills'],
+  [/\b(netflix|spotify|prime|hotstar|subscription|youtube|jio)\b/i, 'Bills'],
+  [/\b(movie|cinema|game|gaming|concert|event|ticket|pvr|bookmyshow|sport)\b/i, 'Entertainment'],
+  [/\b(gym|fitness|yoga|workout|cult|trainer|sports)\b/i, 'Health'],
+  [/\b(doctor|pharmacy|medicine|medical|hospital|clinic|dentist|checkup|apollo|health)\b/i, 'Health'],
+  [/\b(salary|freelance|client|invoice|project|business|work|payment\s+from)\b/i, 'Business'],
+  [/\b(course|book|class|tuition|udemy|college|school|fee|education|coaching)\b/i, 'Education'],
+];
+
+function guessCategory(text: string): Category {
+  for (const [re, cat] of CATEGORY_RULES) {
+    if (re.test(text)) return cat;
+  }
+  return 'Other';
+}
+
+function parseExpenseRuleBased(message: string): ParsedTransaction | null {
+  const amountMatch = message.match(/[₹$£€]?\s*(\d[\d,]*(?:\.\d{1,2})?)/);
+  if (!amountMatch) return null;
+  const amount = parseFloat(amountMatch[1].replace(/,/g, ''));
+  if (!amount || amount <= 0) return null;
+
+  const isIncome = /\b(received?|got|income|salary|earned?|credited?|got paid)\b/i.test(message);
+  const type: 'expense' | 'income' = isIncome ? 'income' : 'expense';
+
+  const descMatch = message.match(/\b(?:on|for|at|from)\s+(.+)/i);
+  const description = descMatch
+    ? descMatch[1].trim()
+    : message.replace(/[₹$£€]?\s*\d[\d,]*(?:\.\d+)?/, '').replace(/\b(spent|paid|bought|received?|got|expense|income)\b/ig, '').replace(/\s+/g, ' ').trim();
+
+  const category = guessCategory(description || message);
+
+  return {
+    amount,
+    currency: 'INR',
+    type,
+    category,
+    date: new Date().toISOString().slice(0, 10),
+    description: description || (type === 'expense' ? 'Expense' : 'Income'),
+    payee: '',
+    paymentMode: null,
+    confidence: 0.8,
+  };
+}
+
 /** Validate, coerce, and clamp a raw model response into a ParsedTransaction. */
 function coerce(raw: string): ParsedTransaction {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
@@ -63,7 +120,7 @@ function coerce(raw: string): ParsedTransaction {
 }
 
 export async function parseExpense(message: string): Promise<ParsedTransaction> {
-  let lastErr: unknown;
+  // Try each AI model in order
   for (const model of TEXT_MODELS) {
     try {
       console.log(`[parseExpense] trying model: ${model}`);
@@ -79,10 +136,15 @@ export async function parseExpense(message: string): Promise<ParsedTransaction> 
       return coerce(raw);
     } catch (err) {
       console.error(`[parseExpense] ${model} failed:`, err);
-      lastErr = err;
     }
   }
-  throw lastErr;
+
+  // All AI models failed — fall back to rule-based parsing (never throws)
+  console.warn('[parseExpense] all AI models failed, using rule-based fallback');
+  const fallback = parseExpenseRuleBased(message);
+  if (fallback) return fallback;
+
+  throw new Error('Could not parse transaction — no amount found in message');
 }
 
 /** Parse a receipt / payment screenshot / invoice image into a transaction. */
