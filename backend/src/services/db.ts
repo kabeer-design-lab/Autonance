@@ -72,8 +72,9 @@ async function querySummary(workspaceId: string, from: string, to: string) {
 }
 
 export async function getMonthlySummary(workspaceId: string, year: number, month: number) {
-  const from = `${year}-${String(month).padStart(2, '0')}-01`;
-  const to   = `${year}-${String(month).padStart(2, '0')}-31`;
+  const from    = `${year}-${String(month).padStart(2, '0')}-01`;
+  const lastDay = new Date(year, month, 0).getDate(); // day 0 of next month = last day of this month
+  const to      = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
   return querySummary(workspaceId, from, to);
 }
 
