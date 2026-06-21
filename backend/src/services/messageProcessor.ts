@@ -11,14 +11,11 @@ import {
 import { WhatsAppMessage, ParsedTransaction } from '../types';
 
 // ── Guardrail 1: Duplicate message dedup ─────────────────────────────────────
-// WhatsApp Cloud API can deliver the same webhook twice within seconds.
-// We keep a Set of recently-seen messageIds and ignore repeats.
-const SEEN_IDS = new Map<string, number>(); // messageId → timestamp
-const DEDUP_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const SEEN_IDS = new Map<string, number>();
+const DEDUP_TTL_MS = 2 * 60 * 1000;
 
 function isDuplicate(messageId: string): boolean {
   const now = Date.now();
-  // Evict entries older than TTL to avoid memory leak
   for (const [id, ts] of SEEN_IDS) {
     if (now - ts > DEDUP_TTL_MS) SEEN_IDS.delete(id);
   }
@@ -28,7 +25,7 @@ function isDuplicate(messageId: string): boolean {
 }
 
 // ── Guardrail 2: Amount sanity ────────────────────────────────────────────────
-const MAX_SANE_AMOUNT = 10_000_000; // ₹1 crore — anything above is almost certainly a parse error
+const MAX_SANE_AMOUNT = 10_000_000;
 
 function amountSanityCheck(amount: number): 'ok' | 'zero' | 'too_large' {
   if (amount <= 0)              return 'zero';
@@ -43,33 +40,31 @@ const BTN_MORE    = 'more';
 const BTN_WEEK    = 'week';
 const BTN_BALANCE = 'balance';
 
-const RE_HAS_AMOUNT    = /[\d,]+(\.\d+)?|₹|\$|£|€/;
+const RE_HAS_AMOUNT    = /\d+|₹|\$|£|€/;
 const RE_MONEY_KEYWORD = /\b(spent|paid|received|salary|bought|purchased|income|expense|transfer)\b/i;
 
 // ── Deterministic intent detection ───────────────────────────────────────────
-// Checked in priority order. No AI needed — instant, no rate limits.
 function detectIntent(text: string): string {
   const t = text.toLowerCase().trim();
 
-  // Greetings / help
   if (/^(hi|hello|hey|help|menu|start|commands)[\s?!.]*$/.test(t)) return 'HELP';
 
-  // Income analysis — "most income from", "where did salary come", "which source paid most"
+  // Income analysis — must come before TOP_SPENDING to avoid misrouting
   if (
     /\b(income|earn(ed)?|receiv(ed)?|got paid|salary|credit(ed)?)\b/.test(t) &&
     /\b(where|which|most|source|from|top|highest|breakdown|more)\b/.test(t)
   ) return 'TOP_INCOME';
 
-  // Spending analysis — "where spent", "which category", "most money on"
+  // Spending analysis
   if (
     /\b(where|which|most|top|highest|biggest|max(imum)?|more)\b/.test(t) &&
     /\b(spent|spend(ing)?|expens(e|es)|money|paid|cost|bought)\b/.test(t)
   ) return 'TOP_SPENDING';
 
-  // Time-period reports (only when no specific amount present)
+  // Time-period reports (only when no amount present)
   if (!RE_HAS_AMOUNT.test(text)) {
-    if (/\btoday\b/.test(t))                                                   return 'TODAY';
-    if (/\b(this week|last week|7 days|weekly|week)\b/.test(t))                return 'WEEK';
+    if (/\btoday\b/.test(t))                                                    return 'TODAY';
+    if (/\b(this week|last week|7 days|weekly|week)\b/.test(t))                 return 'WEEK';
     if (/\b(balance|net worth|left|remaining|saved|overall|position)\b/.test(t)) return 'BALANCE';
     if (/\b(this month|monthly|month|summary|report|how much|spending|expenses?)\b/.test(t)) return 'MONTH';
   }
@@ -80,43 +75,60 @@ function detectIntent(text: string): string {
   return 'UNKNOWN';
 }
 
+// ── Fallback reply — always sent when a handler crashes ──────────────────────
+async function sendFallback(to: string, context: string): Promise<void> {
+  console.error(`[fallback] sending fallback reply after error in: ${context}`);
+  try {
+    await sendInteractiveButtons(
+      to,
+      'Something went wrong on my end. Please try again.',
+      [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
+    );
+  } catch {
+    // If even the fallback fails, at least we logged it
+  }
+}
+
 // ── Main entry ────────────────────────────────────────────────────────────────
 export async function processMessage(msg: WhatsAppMessage): Promise<void> {
-  // Guardrail 1: drop duplicate webhook deliveries silently
   if (isDuplicate(msg.messageId)) {
     console.log(`[dedup] ignoring duplicate messageId=${msg.messageId}`);
     return;
   }
 
-  if (msg.kind === 'image') { await handleImage(msg); return; }
+  try {
+    if (msg.kind === 'image') { await handleImage(msg); return; }
 
-  // Button / list tap — route by ID first (most specific)
-  if (msg.kind === 'interactive' && msg.buttonId) {
-    await handleButton(msg, msg.buttonId);
-    return;
-  }
+    if (msg.kind === 'interactive' && msg.buttonId) {
+      await handleButton(msg, msg.buttonId);
+      return;
+    }
 
-  const text = msg.text.trim();
-  if (!text) { await handleWelcome(msg); return; }
+    const text = msg.text.trim();
+    if (!text) { await handleWelcome(msg); return; }
 
-  const intent = detectIntent(text);
-  console.log(`[intent] "${text}" → ${intent}`);
+    const intent = detectIntent(text);
+    console.log(`[intent] "${text}" → ${intent}`);
 
-  switch (intent) {
-    case 'HELP':        await handleWelcome(msg);        break;
-    case 'TOP_INCOME':  await handleTopIncome(msg);      break;
-    case 'TOP_SPENDING':await handleTopSpending(msg);    break;
-    case 'TODAY':       await handleTodayReport(msg);    break;
-    case 'WEEK':        await handleWeeklyReport(msg);   break;
-    case 'BALANCE':     await handleBalance(msg);        break;
-    case 'MONTH':       await handleMonthlyReport(msg);  break;
-    case 'TRANSACTION': await handleTransaction(msg);    break;
-    default:
-      await sendInteractiveButtons(
-        msg.from,
-        "I didn't quite get that. What would you like to do?",
-        [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
-      );
+    switch (intent) {
+      case 'HELP':         await handleWelcome(msg);        break;
+      case 'TOP_INCOME':   await handleTopIncome(msg);      break;
+      case 'TOP_SPENDING': await handleTopSpending(msg);    break;
+      case 'TODAY':        await handleTodayReport(msg);    break;
+      case 'WEEK':         await handleWeeklyReport(msg);   break;
+      case 'BALANCE':      await handleBalance(msg);        break;
+      case 'MONTH':        await handleMonthlyReport(msg);  break;
+      case 'TRANSACTION':  await handleTransaction(msg);    break;
+      default:
+        await sendInteractiveButtons(
+          msg.from,
+          "I didn't quite get that. What would you like to do?",
+          [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
+        );
+    }
+  } catch (err) {
+    console.error(`[processMessage] unhandled error for msg="${msg.text}":`, err);
+    await sendFallback(msg.from, msg.text ?? 'unknown');
   }
 }
 
@@ -139,7 +151,7 @@ async function handleWelcome(msg: WhatsAppMessage): Promise<void> {
   );
 }
 
-// ── More options (list menu) ──────────────────────────────────────────────────
+// ── More options ──────────────────────────────────────────────────────────────
 async function handleMoreMenu(msg: WhatsAppMessage): Promise<void> {
   await sendListMessage(
     msg.from,
@@ -149,9 +161,9 @@ async function handleMoreMenu(msg: WhatsAppMessage): Promise<void> {
       {
         title: 'Reports',
         rows: [
-          { id: BTN_WEEK,    title: '📆 This Week',    description: 'Last 7 days breakdown' },
-          { id: BTN_BALANCE, title: '💰 Net Balance',  description: 'All-time income vs expenses' },
-          { id: BTN_TODAY,   title: '📊 Today',        description: "Today's spending snapshot" },
+          { id: BTN_WEEK,    title: '📆 This Week',   description: 'Last 7 days breakdown' },
+          { id: BTN_BALANCE, title: '💰 Net Balance', description: 'All-time income vs expenses' },
+          { id: BTN_TODAY,   title: '📊 Today',       description: "Today's spending snapshot" },
         ],
       },
     ],
@@ -193,7 +205,7 @@ async function handleMonthlyReport(msg: WhatsAppMessage): Promise<void> {
   const s   = await getMonthlySummary(link.workspace_id, now.getFullYear(), now.getMonth() + 1);
 
   let insight: string | undefined;
-  try { insight = await generateInsight(s.totalIncome, s.totalExpense, s.byCategory); } catch { /* skip */ }
+  try { insight = await generateInsight(s.totalIncome, s.totalExpense, s.byCategory); } catch { /* optional */ }
 
   const body = formatMonthlySummary(s.totalIncome, s.totalExpense, s.byCategory, insight);
   await sendInteractiveButtons(
@@ -245,7 +257,7 @@ async function handleTopSpending(msg: WhatsAppMessage): Promise<void> {
   if (ranked.length === 0) {
     await sendInteractiveButtons(
       msg.from,
-      `No expenses recorded for ${periodLabel} yet. Start by sending a message like "Spent 500 on lunch".`,
+      `No expenses recorded for ${periodLabel} yet.\n\nStart logging: "Spent 500 on lunch"`,
       [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
     );
     return;
@@ -254,16 +266,18 @@ async function handleTopSpending(msg: WhatsAppMessage): Promise<void> {
   const [topCat, topAmt] = ranked[0];
   const topPct = totalExpense > 0 ? Math.round((topAmt / totalExpense) * 100) : 0;
 
+  // Keep lines short — WhatsApp interactive body max is 1024 chars
   const lines = ranked
-    .slice(0, 6)
+    .slice(0, 5)
     .map(([cat, amt], i) => {
-      const pct  = totalExpense > 0 ? Math.round((amt / totalExpense) * 100) : 0;
-      const bar  = '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10));
-      return `${i + 1}. *${cat}* — ₹${amt.toLocaleString('en-IN')} (${pct}%)\n   ${bar}`;
+      const pct = totalExpense > 0 ? Math.round((amt / totalExpense) * 100) : 0;
+      return `${i + 1}. *${cat}* - Rs.${amt.toLocaleString('en-IN')} (${pct}%)`;
     })
-    .join('\n\n');
+    .join('\n');
 
-  const body = `🔍 *Where you spend most — ${periodLabel}*\n\n${lines}\n\n💡 *${topCat}* takes up ${topPct}% of your spending.`;
+  const body = `Top spending - ${periodLabel}\n\n${lines}\n\n${topCat} is your biggest expense at ${topPct}% of total spending.`;
+
+  console.log(`[handleTopSpending] body length=${body.length}, categories=${ranked.length}`);
 
   await sendInteractiveButtons(
     msg.from, body,
@@ -298,32 +312,32 @@ async function handleTopIncome(msg: WhatsAppMessage): Promise<void> {
   if (total === 0) {
     await sendInteractiveButtons(
       msg.from,
-      `No income recorded for ${periodLabel} yet.\n\nLog income by sending: "Received 50000 salary"`,
+      `No income recorded for ${periodLabel} yet.\n\nLog income: "Received 50000 salary"`,
       [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
     );
     return;
   }
 
-  const rankedPayees = Object.entries(byPayee).sort(([, a], [, b]) => b - a).slice(0, 4);
-  const rankedCats   = Object.entries(byCategory).sort(([, a], [, b]) => b - a).slice(0, 4);
+  const rankedPayees = Object.entries(byPayee).sort(([, a], [, b]) => b - a).slice(0, 3);
+  const rankedCats   = Object.entries(byCategory).sort(([, a], [, b]) => b - a).slice(0, 3);
 
   const payeeLines = rankedPayees.length > 0
     ? rankedPayees.map(([p, amt], i) => {
         const pct = Math.round((amt / total) * 100);
-        return `${i + 1}. *${p}* — ₹${amt.toLocaleString('en-IN')} (${pct}%)`;
+        return `${i + 1}. *${p}* - Rs.${amt.toLocaleString('en-IN')} (${pct}%)`;
       }).join('\n')
     : null;
 
   const catLines = rankedCats.map(([c, amt], i) => {
     const pct = Math.round((amt / total) * 100);
-    return `${i + 1}. *${c}* — ₹${amt.toLocaleString('en-IN')} (${pct}%)`;
+    return `${i + 1}. *${c}* - Rs.${amt.toLocaleString('en-IN')} (${pct}%)`;
   }).join('\n');
 
   const sourcesSection = payeeLines
-    ? `*By source:*\n${payeeLines}\n\n*By type:*\n${catLines}`
-    : `*By type:*\n${catLines}`;
+    ? `By source:\n${payeeLines}\n\nBy type:\n${catLines}`
+    : `By type:\n${catLines}`;
 
-  const body = `📈 *Where your income comes from — ${periodLabel}*\n\n💰 Total received: ₹${total.toLocaleString('en-IN')}\n\n${sourcesSection}`;
+  const body = `Income sources - ${periodLabel}\n\nTotal: Rs.${total.toLocaleString('en-IN')}\n\n${sourcesSection}`;
 
   await sendInteractiveButtons(
     msg.from, body,
@@ -347,12 +361,12 @@ async function handleTransaction(msg: WhatsAppMessage): Promise<void> {
 // ── Image (receipt) ───────────────────────────────────────────────────────────
 async function handleImage(msg: WhatsAppMessage): Promise<void> {
   if (!msg.mediaId) return;
-  await sendWhatsAppMessage(msg.from, `📸 Reading your receipt…`);
+  await sendWhatsAppMessage(msg.from, `Reading your receipt...`);
 
   let parsed: ParsedTransaction;
   try {
     const { base64, mimeType } = await downloadMedia(msg.mediaId);
-    console.log(`[handleImage] downloaded media ${msg.mediaId} (${mimeType}, ${Math.round(base64.length / 1024)}KB)`);
+    console.log(`[handleImage] downloaded ${msg.mediaId} (${mimeType}, ${Math.round(base64.length / 1024)}KB)`);
     parsed = await parseReceiptImage(base64, mimeType);
   } catch (err) {
     console.error('[handleImage] error:', err);
@@ -366,17 +380,15 @@ async function handleImage(msg: WhatsAppMessage): Promise<void> {
 async function saveParsedTransaction(
   msg: WhatsAppMessage, parsed: ParsedTransaction, rawForRecord: string,
 ): Promise<void> {
-  // Guardrail 2: amount sanity check
   const amountStatus = amountSanityCheck(parsed.amount);
   if (amountStatus !== 'ok') {
     const reason = amountStatus === 'zero'
       ? `I couldn't find a valid amount in that message.`
-      : `That amount (₹${parsed.amount.toLocaleString('en-IN')}) looks unusually large — I want to make sure I read it right.`;
-    await sendWhatsAppMessage(msg.from, `⚠️ ${reason}\n\nCould you resend it? Example: "Spent 500 on lunch" or "Received 50000 salary".`);
+      : `That amount (Rs.${parsed.amount.toLocaleString('en-IN')}) looks unusually large.`;
+    await sendWhatsAppMessage(msg.from, `${reason}\n\nTry: "Spent 500 on lunch" or "Received 50000 salary".`);
     return;
   }
 
-  // Guardrail: low AI confidence → ask user to confirm before saving
   if (parsed.confidence < LOW_CONFIDENCE_THRESHOLD) {
     await sendInteractiveButtons(
       msg.from,
