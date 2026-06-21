@@ -4,7 +4,7 @@ import { ParsedTransaction, Category, VALID_CATEGORIES } from '../types';
 // NVIDIA NIM client — GLM-5.1 primary text model
 const nvidiaClient = new OpenAI({
   baseURL: 'https://integrate.api.nvidia.com/v1',
-  apiKey: process.env.NVIDIA_API_KEY,
+  apiKey: process.env.NVIDIA_API_KEY ?? 'not-configured',
   maxRetries: 0,
   timeout: 10_000,
 });
