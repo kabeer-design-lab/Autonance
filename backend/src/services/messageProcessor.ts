@@ -229,10 +229,13 @@ async function handleBalance(msg: WhatsAppMessage): Promise<void> {
 
 // ── Top spending breakdown ────────────────────────────────────────────────────
 async function handleTopSpending(msg: WhatsAppMessage): Promise<void> {
+  console.log('[handleTopSpending] start, from=', msg.from);
+
   const link = await getUserByPhone(msg.from);
+  console.log('[handleTopSpending] link=', JSON.stringify(link));
   if (!link) { await notLinked(msg.from); return; }
 
-  const lower = msg.text.toLowerCase();
+  const lower = (msg.text || '').toLowerCase();
   let summary: Awaited<ReturnType<typeof getMonthlySummary>>;
   let periodLabel: string;
 
@@ -251,14 +254,15 @@ async function handleTopSpending(msg: WhatsAppMessage): Promise<void> {
     periodLabel = new Date().toLocaleDateString('en-IN', { month: 'long' });
   }
 
+  console.log('[handleTopSpending] summary=', JSON.stringify(summary));
+
   const { byCategory, totalExpense } = summary;
   const ranked = Object.entries(byCategory).sort(([, a], [, b]) => b - a);
 
   if (ranked.length === 0) {
-    await sendInteractiveButtons(
+    await sendWhatsAppMessage(
       msg.from,
-      `No expenses recorded for ${periodLabel} yet.\n\nStart logging: "Spent 500 on lunch"`,
-      [{ id: BTN_TODAY, title: '📊 Today' }, { id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_MORE, title: '⚡ More' }],
+      `No expenses recorded for ${periodLabel} yet.\n\nStart logging by typing: "Spent 500 on lunch"`,
     );
     return;
   }
@@ -266,23 +270,20 @@ async function handleTopSpending(msg: WhatsAppMessage): Promise<void> {
   const [topCat, topAmt] = ranked[0];
   const topPct = totalExpense > 0 ? Math.round((topAmt / totalExpense) * 100) : 0;
 
-  // Keep lines short — WhatsApp interactive body max is 1024 chars
   const lines = ranked
     .slice(0, 5)
     .map(([cat, amt], i) => {
       const pct = totalExpense > 0 ? Math.round((amt / totalExpense) * 100) : 0;
-      return `${i + 1}. *${cat}* - Rs.${amt.toLocaleString('en-IN')} (${pct}%)`;
+      return `${i + 1}. ${cat}: Rs.${amt.toLocaleString('en-IN')} (${pct}%)`;
     })
     .join('\n');
 
-  const body = `Top spending - ${periodLabel}\n\n${lines}\n\n${topCat} is your biggest expense at ${topPct}% of total spending.`;
+  const body = `Where you spend most (${periodLabel}):\n\n${lines}\n\nBiggest: ${topCat} at ${topPct}% of total`;
 
-  console.log(`[handleTopSpending] body length=${body.length}, categories=${ranked.length}`);
+  console.log(`[handleTopSpending] body length=${body.length}, body="${body}"`);
 
-  await sendInteractiveButtons(
-    msg.from, body,
-    [{ id: BTN_MONTH, title: '📅 This Month' }, { id: BTN_WEEK, title: '📆 This Week' }, { id: BTN_BALANCE, title: '💰 Balance' }],
-  );
+  // Use plain text message to avoid any WhatsApp interactive API issues
+  await sendWhatsAppMessage(msg.from, body);
 }
 
 // ── Top income sources ────────────────────────────────────────────────────────
