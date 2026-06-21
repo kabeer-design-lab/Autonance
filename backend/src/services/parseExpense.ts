@@ -1,23 +1,33 @@
 import OpenAI from 'openai';
 import { ParsedTransaction, Category, VALID_CATEGORIES } from '../types';
 
-const client = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY,
-  maxRetries: 0,      // CRITICAL: default is 2 — retries on a slow free model add minutes of latency
-  timeout: 12_000,    // give up on any single model after 12s and move on
+// NVIDIA NIM client — GLM-5.1 primary text model
+const nvidiaClient = new OpenAI({
+  baseURL: 'https://integrate.api.nvidia.com/v1',
+  apiKey: process.env.NVIDIA_API_KEY,
+  maxRetries: 0,
+  timeout: 10_000,
 });
 
-// Model chain: primary → fallback. If primary is rate-limited, fallback kicks in.
-const TEXT_MODELS   = [
-  'google/gemini-2.0-flash-exp:free',          // primary: reliable, fast
-  'deepseek/deepseek-chat-v3-0324:free',        // fallback 1
-  'meta-llama/llama-3.3-70b-instruct:free',     // fallback 2
+// OpenRouter client — fallback text + vision
+const openrouterClient = new OpenAI({
+  baseURL: 'https://openrouter.ai/api/v1',
+  apiKey: process.env.OPENROUTER_API_KEY,
+  maxRetries: 0,
+  timeout: 10_000,
+});
+
+interface ModelEntry { client: OpenAI; model: string; }
+
+const TEXT_MODELS: ModelEntry[] = [
+  { client: nvidiaClient,    model: 'z-ai/glm-5.1' },                          // primary: NVIDIA NIM, fast + smart
+  { client: openrouterClient, model: 'google/gemma-4-31b-it:free' },           // fallback 1
+  { client: openrouterClient, model: 'meta-llama/llama-3.3-70b-instruct:free' }, // fallback 2
 ];
-const VISION_MODELS = [
-  'google/gemini-2.0-flash-exp:free',           // primary: supports vision + text
-  'qwen/qwen2.5-vl-72b-instruct:free',          // fallback 1
-  'meta-llama/llama-3.2-11b-vision-instruct:free', // fallback 2
+
+const VISION_MODELS: ModelEntry[] = [
+  { client: openrouterClient, model: 'qwen/qwen2.5-vl-72b-instruct:free' },   // primary: best free vision
+  { client: openrouterClient, model: 'nvidia/nemotron-nano-12b-v2-vl:free' },  // fallback
 ];
 
 const today = () => new Date().toISOString().split('T')[0];
@@ -47,7 +57,6 @@ const VISION_PROMPT = `You are a financial assistant. The image is a receipt, pa
 ${SCHEMA}`;
 
 // ── Rule-based fallback parser ───────────────────────────────────────────────
-// Used when ALL AI models fail. Handles common patterns deterministically.
 
 const CATEGORY_RULES: [RegExp, Category][] = [
   [/\b(food|lunch|dinner|breakfast|meal|restaurant|cafe|zomato|swiggy|snack|pizza|biryani|burger|hotel|dhaba)\b/i, 'Food'],
@@ -103,7 +112,6 @@ function parseExpenseRuleBased(message: string): ParsedTransaction | null {
   };
 }
 
-/** Validate, coerce, and clamp a raw model response into a ParsedTransaction. */
 function coerce(raw: string): ParsedTransaction {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
 
@@ -121,19 +129,16 @@ function coerce(raw: string): ParsedTransaction {
   return parsed;
 }
 
-/** Does the rule-based parse look clear enough to skip AI entirely? */
 function isSimpleMessage(message: string): boolean {
-  // Short message with one amount and a recognisable category keyword → rules are enough.
   const words = message.trim().split(/\s+/);
-  if (words.length > 8) return false;                    // long/complex → use AI
+  if (words.length > 8) return false;
   const amounts = message.match(/\d[\d,]*(?:\.\d+)?/g) ?? [];
-  if (amounts.length !== 1) return false;                // 0 or multiple amounts → use AI
+  if (amounts.length !== 1) return false;
   return true;
 }
 
 export async function parseExpense(message: string): Promise<ParsedTransaction> {
-  // FAST PATH: simple messages ("Spent 238 on snacks") are parsed by rules instantly,
-  // no API call, no latency. AI is only used for complex/ambiguous messages.
+  // Fast path: simple messages skip AI entirely (instant)
   if (isSimpleMessage(message)) {
     const quick = parseExpenseRuleBased(message);
     if (quick) {
@@ -142,8 +147,7 @@ export async function parseExpense(message: string): Promise<ParsedTransaction> 
     }
   }
 
-  // Complex message — try each AI model in order (fail fast: no retries, 12s timeout)
-  for (const model of TEXT_MODELS) {
+  for (const { client, model } of TEXT_MODELS) {
     try {
       console.log(`[parseExpense] trying model: ${model}`);
       const response = await client.chat.completions.create({
@@ -161,7 +165,6 @@ export async function parseExpense(message: string): Promise<ParsedTransaction> 
     }
   }
 
-  // All AI models failed — fall back to rule-based parsing (never throws)
   console.warn('[parseExpense] all AI models failed, using rule-based fallback');
   const fallback = parseExpenseRuleBased(message);
   if (fallback) return fallback;
@@ -169,12 +172,11 @@ export async function parseExpense(message: string): Promise<ParsedTransaction> 
   throw new Error('Could not parse transaction — no amount found in message');
 }
 
-/** Parse a receipt / payment screenshot / invoice image into a transaction. */
 export async function parseReceiptImage(base64: string, mimeType: string): Promise<ParsedTransaction> {
   const dataUri = `data:${mimeType};base64,${base64}`;
   let lastErr: unknown;
 
-  for (const model of VISION_MODELS) {
+  for (const { client, model } of VISION_MODELS) {
     try {
       console.log(`[parseReceiptImage] trying model: ${model}`);
       const response = await client.chat.completions.create({
@@ -219,10 +221,6 @@ const VALID_INTENTS: MessageIntent[] = [
   'BALANCE', 'TOP_SPENDING', 'TOP_INCOME', 'HELP', 'UNKNOWN',
 ];
 
-/**
- * Classify the user's message into a structured intent.
- * Returns in ~200ms using a tiny max_tokens budget.
- */
 export async function classifyIntent(message: string): Promise<MessageIntent> {
   const prompt = `You are classifying a WhatsApp message sent to a personal finance bot.
 Return ONLY one intent name from this list — no explanation, no punctuation:
@@ -242,8 +240,8 @@ Message: "${message.replace(/"/g, "'")}"
 Intent:`;
 
   try {
-    const response = await client.chat.completions.create({
-      model: TEXT_MODELS[0],
+    const response = await TEXT_MODELS[0].client.chat.completions.create({
+      model: TEXT_MODELS[0].model,
       max_tokens: 8,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -254,7 +252,6 @@ Intent:`;
   }
 }
 
-/** Generate a short AI insight sentence from monthly stats. */
 export async function generateInsight(
   totalIncome: number,
   totalExpense: number,
@@ -269,10 +266,9 @@ export async function generateInsight(
 
   const prompt = `You are a friendly personal finance assistant. In exactly ONE short sentence (max 15 words), give a helpful and encouraging insight based on these numbers: Income ₹${totalIncome.toLocaleString('en-IN')}, Expenses ₹${totalExpense.toLocaleString('en-IN')}, Net ₹${net.toLocaleString('en-IN')}, Top categories: ${topCats || 'none'}. Be specific, positive, and actionable.`;
 
-  // Insight is optional — try ONLY the primary model so a slow report never stalls.
   try {
-    const response = await client.chat.completions.create({
-      model: TEXT_MODELS[0],
+    const response = await TEXT_MODELS[0].client.chat.completions.create({
+      model: TEXT_MODELS[0].model,
       max_tokens: 60,
       messages: [{ role: 'user', content: prompt }],
     });
