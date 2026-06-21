@@ -273,16 +273,17 @@ async function handleTopSpending(msg: WhatsAppMessage): Promise<void> {
   const lines = ranked
     .slice(0, 5)
     .map(([cat, amt], i) => {
-      const pct = totalExpense > 0 ? Math.round((amt / totalExpense) * 100) : 0;
-      return `${i + 1}. ${cat}: Rs.${amt.toLocaleString('en-IN')} (${pct}%)`;
+      const pct    = totalExpense > 0 ? Math.round((amt / totalExpense) * 100) : 0;
+      const filled = Math.round(pct / 10);
+      const bar    = '█'.repeat(filled) + '░'.repeat(10 - filled);
+      return `${i + 1}. *${cat}* — ₹${amt.toLocaleString('en-IN')} (${pct}%)\n   ${bar}`;
     })
-    .join('\n');
+    .join('\n\n');
 
-  const body = `Where you spend most (${periodLabel}):\n\n${lines}\n\nBiggest: ${topCat} at ${topPct}% of total`;
+  const body = `🔍 *Where you spend most — ${periodLabel}*\n\n${lines}\n\n💡 *${topCat}* takes up ${topPct}% of your spending.`;
 
-  console.log(`[handleTopSpending] body length=${body.length}, body="${body}"`);
+  console.log(`[handleTopSpending] body length=${body.length}`);
 
-  // Use plain text message to avoid any WhatsApp interactive API issues
   await sendWhatsAppMessage(msg.from, body);
 }
 
